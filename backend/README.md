@@ -8,3 +8,15 @@ src/audit       audit trail
 src/database    migrations, seed scripts, connection
 
 Rules: controllers hold no business rules, services hold the rules, repositories hold all SQL.
+
+## Database Scripts
+- `npm run db:migrate` – Run schema migrations (idempotent, safe for existing data)
+- `npm run db:seed` – Load initial seed data
+- `npm run db:reset` – Drop all tables and re-run migrations (development only)
+
+## Default Seed Accounts
+All default seed users share the test password: **`Test@1234`**
+- **Admin**: `admin@bloodbank.org` (Role: Admin)
+- **Staff**: `staff@bloodbank.org` (Role: Staff)
+- **Donor**: `john.doe@example.com` (Role: Donor)
+- **Hospital/Patient**: `hospital@citygen.org` (Role: Hospital/Patient)
