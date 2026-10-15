@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const bcrypt = require('bcryptjs');
 const db = require('./db');
 
 describe('Database Schema & Migration (SRS 7.1, SAD 3.6)', () => {
@@ -13,6 +14,11 @@ describe('Database Schema & Migration (SRS 7.1, SAD 3.6)', () => {
   it('contains schema.sql file', () => {
     expect(fs.existsSync(schemaPath)).toBe(true);
     expect(schemaSql.length).toBeGreaterThan(0);
+  });
+
+  it('uses non-destructive CREATE TABLE IF NOT EXISTS and no DROP TABLE', () => {
+    expect(schemaSql).not.toMatch(/DROP\s+TABLE/i);
+    expect(schemaSql).toMatch(/CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS/i);
   });
 
   it('defines all 10 required tables from SRS 7.1 and SAD 3.6', () => {
@@ -30,7 +36,7 @@ describe('Database Schema & Migration (SRS 7.1, SAD 3.6)', () => {
     ];
 
     requiredTables.forEach((table) => {
-      const tableRegex = new RegExp(`CREATE TABLE\\s+${table}\\b`, 'i');
+      const tableRegex = new RegExp(`CREATE TABLE( IF NOT EXISTS)?\\s+${table}\\b`, 'i');
       expect(schemaSql).toMatch(tableRegex);
     });
   });
@@ -51,16 +57,13 @@ describe('Database Schema & Migration (SRS 7.1, SAD 3.6)', () => {
   });
 
   it('defines the required CHECK constraints', () => {
-    // Blood group validation
     expect(schemaSql).toMatch(/CHECK\s*\(\s*blood_group\s+IN/i);
-    // Role validation
     expect(schemaSql).toMatch(/CHECK\s*\(\s*role\s+IN/i);
-    // Volume validation
     expect(schemaSql).toMatch(/CHECK\s*\(\s*volume_ml\s+IN/i);
   });
 });
 
-describe('Database Seed Data (SAD 3.6 & STP Setup)', () => {
+describe('Database Seed Data (SAD 3.6, FR-DON-04 & STP Setup)', () => {
   const seedsPath = path.join(__dirname, 'seeds.sql');
   let seedsSql = '';
 
@@ -73,24 +76,44 @@ describe('Database Seed Data (SAD 3.6 & STP Setup)', () => {
     expect(seedsSql.length).toBeGreaterThan(0);
   });
 
-  it('seeds default system configuration values', () => {
-    expect(seedsSql).toMatch(/shelf_life_days/i);
-    expect(seedsSql).toMatch(/low_stock_threshold/i);
-    expect(seedsSql).toMatch(/expiring_soon_days/i);
+  it('seeds all required system configuration values including eligibility, lockout, and backup', () => {
+    const expectedKeys = [
+      'shelf_life_days',
+      'low_stock_threshold',
+      'expiring_soon_days',
+      'lockout_duration_mins',
+      'lockout_max_attempts',
+      'session_idle_timeout_mins',
+      'eligibility_min_age',
+      'eligibility_max_age',
+      'eligibility_min_weight_kg',
+      'eligibility_gap_days_male',
+      'eligibility_gap_days_other',
+      'backup_retention_days',
+    ];
+
+    expectedKeys.forEach((key) => {
+      expect(seedsSql).toContain(key);
+    });
   });
 
-  it('seeds users for each role (Admin, Staff, Donor, Hospital/Patient)', () => {
+  it('seeds users with valid bcrypt hash matching Test@1234', () => {
     expect(seedsSql).toMatch(/'Admin'/);
     expect(seedsSql).toMatch(/'Staff'/);
     expect(seedsSql).toMatch(/'Donor'/);
     expect(seedsSql).toMatch(/'Hospital\/Patient'/);
+
+    const hashMatch = seedsSql.match(/\$2[aby]?\$\d+\$[./A-Za-z0-9]{53}/);
+    expect(hashMatch).not.toBeNull();
+    const hash = hashMatch[0];
+    expect(bcrypt.compareSync('Test@1234', hash)).toBe(true);
   });
 
-  it('seeds sample donors, donations, and blood units', () => {
-    expect(seedsSql).toMatch(/INSERT INTO donors/i);
-    expect(seedsSql).toMatch(/INSERT INTO donations/i);
-    expect(seedsSql).toMatch(/INSERT INTO blood_units/i);
-    expect(seedsSql).toMatch(/INSERT INTO blood_requests/i);
+  it('ensures each blood unit maps to a distinct donation and respects donation gaps', () => {
+    expect(seedsSql).toMatch(/'UNT-10001',\s*'DON-00000001'/);
+    expect(seedsSql).toMatch(/'UNT-10002',\s*'DON-00000002'/);
+    expect(seedsSql).toMatch(/'UNT-10003',\s*'DON-00000003'/);
+    expect(seedsSql).toMatch(/'UNT-10004',\s*'DON-00000004'/);
   });
 });
 

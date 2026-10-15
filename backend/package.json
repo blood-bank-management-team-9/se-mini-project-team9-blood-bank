@@ -9,10 +9,12 @@
     "lint:fix": "eslint . --fix",
     "db:migrate": "node src/database/migrate.js",
     "db:seed": "node src/database/seed.js",
+    "db:reset": "node src/database/reset.js",
     "test": "jest --runInBand",
     "test:coverage": "jest --runInBand --coverage"
   },
   "dependencies": {
+    "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",

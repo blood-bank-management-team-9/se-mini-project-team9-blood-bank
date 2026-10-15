@@ -1,20 +1,9 @@
 -- BBMS Database Schema Migration
 -- As per SRS 7.1 Database Requirements, Appendix B & SAD 3.6 Main Tables
-
--- Drop tables in reverse dependency order if migrating fresh
-DROP TABLE IF EXISTS blood_request_units CASCADE;
-DROP TABLE IF EXISTS blood_requests CASCADE;
-DROP TABLE IF EXISTS blood_units CASCADE;
-DROP TABLE IF EXISTS donations CASCADE;
-DROP TABLE IF EXISTS donors CASCADE;
-DROP TABLE IF EXISTS password_reset_tokens CASCADE;
-DROP TABLE IF EXISTS audit_log CASCADE;
-DROP TABLE IF EXISTS sessions CASCADE;
-DROP TABLE IF EXISTS system_config CASCADE;
-DROP TABLE IF EXISTS users CASCADE;
+-- Safe migration: idempotent table creation without destructive drops
 
 -- 1. Users table (SRS B.1, SAD 3.6)
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
     user_id VARCHAR(10) PRIMARY KEY,
     name VARCHAR(60) NOT NULL,
     email VARCHAR(60) NOT NULL UNIQUE,
@@ -28,7 +17,7 @@ CREATE TABLE users (
 );
 
 -- 2. Donors table (SRS B.2, SAD 3.6)
-CREATE TABLE donors (
+CREATE TABLE IF NOT EXISTS donors (
     donor_id VARCHAR(10) PRIMARY KEY,
     full_name VARCHAR(60) NOT NULL,
     date_of_birth DATE NOT NULL,
@@ -46,7 +35,7 @@ CREATE TABLE donors (
 );
 
 -- 3. Donations table (SRS B.3, SAD 3.6)
-CREATE TABLE donations (
+CREATE TABLE IF NOT EXISTS donations (
     donation_id VARCHAR(12) PRIMARY KEY,
     donor_id VARCHAR(10) NOT NULL REFERENCES donors(donor_id) ON DELETE RESTRICT,
     collection_date DATE NOT NULL,
@@ -60,7 +49,7 @@ CREATE TABLE donations (
 );
 
 -- 4. Blood Units table (SRS B.4, SAD 3.6)
-CREATE TABLE blood_units (
+CREATE TABLE IF NOT EXISTS blood_units (
     unit_id VARCHAR(12) PRIMARY KEY,
     donation_id VARCHAR(12) NOT NULL REFERENCES donations(donation_id) ON DELETE RESTRICT,
     blood_group VARCHAR(5) NOT NULL CHECK (blood_group IN ('A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-')),
@@ -73,7 +62,7 @@ CREATE TABLE blood_units (
 );
 
 -- 5. Blood Requests table (SRS B.5, SAD 3.6)
-CREATE TABLE blood_requests (
+CREATE TABLE IF NOT EXISTS blood_requests (
     request_id VARCHAR(12) PRIMARY KEY,
     requester_id VARCHAR(10) NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
     patient_name VARCHAR(60) NOT NULL,
@@ -91,7 +80,7 @@ CREATE TABLE blood_requests (
 );
 
 -- 6. Blood Request Units (SAD 3.6: link request to reserved units)
-CREATE TABLE blood_request_units (
+CREATE TABLE IF NOT EXISTS blood_request_units (
     request_id VARCHAR(12) NOT NULL REFERENCES blood_requests(request_id) ON DELETE CASCADE,
     unit_id VARCHAR(12) NOT NULL UNIQUE REFERENCES blood_units(unit_id) ON DELETE RESTRICT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -99,7 +88,7 @@ CREATE TABLE blood_request_units (
 );
 
 -- 7. Audit Log table (SRS 7.1, SAD 3.6, C12)
-CREATE TABLE audit_log (
+CREATE TABLE IF NOT EXISTS audit_log (
     log_id SERIAL PRIMARY KEY,
     user_id VARCHAR(10) REFERENCES users(user_id) ON DELETE SET NULL,
     action VARCHAR(100) NOT NULL,
@@ -110,8 +99,8 @@ CREATE TABLE audit_log (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- 8. System Config table (SAD 3.6, C13)
-CREATE TABLE system_config (
+-- 8. System Config table (SAD 3.6, C13, FR-DON-04)
+CREATE TABLE IF NOT EXISTS system_config (
     key VARCHAR(50) PRIMARY KEY,
     value VARCHAR(255) NOT NULL,
     description VARCHAR(255),
@@ -119,7 +108,7 @@ CREATE TABLE system_config (
 );
 
 -- 9. Password Reset Tokens (SAD 3.6)
-CREATE TABLE password_reset_tokens (
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
     token_hash VARCHAR(255) PRIMARY KEY,
     user_id VARCHAR(10) NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
     expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
@@ -128,17 +117,17 @@ CREATE TABLE password_reset_tokens (
 );
 
 -- 10. Sessions table (SAD 3.6 for PostgreSQL session store)
-CREATE TABLE sessions (
+CREATE TABLE IF NOT EXISTS sessions (
     sid VARCHAR(255) PRIMARY KEY,
     sess JSONB NOT NULL,
     expire TIMESTAMP WITH TIME ZONE NOT NULL
 );
 
 -- Performance and Integrity Indexes (SAD 3.6)
-CREATE INDEX idx_blood_units_stock ON blood_units (blood_group, status, expiry_date);
-CREATE INDEX idx_blood_requests_queue ON blood_requests (status, priority, created_at);
-CREATE INDEX idx_audit_log_user_date ON audit_log (created_at, user_id);
-CREATE INDEX idx_donors_phone ON donors (phone);
-CREATE INDEX idx_users_email ON users (email);
-CREATE INDEX idx_users_phone ON users (phone);
-CREATE INDEX idx_sessions_expire ON sessions (expire);
+CREATE INDEX IF NOT EXISTS idx_blood_units_stock ON blood_units (blood_group, status, expiry_date);
+CREATE INDEX IF NOT EXISTS idx_blood_requests_queue ON blood_requests (status, priority, created_at);
+CREATE INDEX IF NOT EXISTS idx_audit_log_user_date ON audit_log (created_at, user_id);
+CREATE INDEX IF NOT EXISTS idx_donors_phone ON donors (phone);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users (email);
+CREATE INDEX IF NOT EXISTS idx_users_phone ON users (phone);
+CREATE INDEX IF NOT EXISTS idx_sessions_expire ON sessions (expire);
