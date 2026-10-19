@@ -1,0 +1,100 @@
+// NFR-SEC-04 (session) + NFR-SEC-02 (RBAC) + NFR-SEC-05 (validation) — minimal proof routes.
+const router = require('express').Router();
+const { body } = require('express-validator');
+const { requireRole } = require('../../middleware/rbac');
+const { validate } = require('../../middleware/validate');
+const { generateCsrfToken } = require('../../middleware/csrf');
+const { query } = require('../../database/db');
+
+// Issues the CSRF token for the double-submit cookie pattern.
+// Must be called once before any state-changing request.
+router.get('/csrf', (req, res, next) => {
+  try {
+    // Force a session so csrf-csrf's getSessionIdentifier has a stable id.
+    if (!req.session.csrfId) {
+      req.session.csrfId = require('crypto').randomBytes(32).toString('hex');
+    }
+    const token = generateCsrfToken(req, res);
+    res.json({ csrfToken: token });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Any logged-in user can read own session.
+router.get('/me', (req, res) => {
+  if (!req.session || !req.session.user) {
+    return res.status(401).json({
+      error: { code: 'UNAUTHENTICATED', message: 'Not logged in', requestId: req.id },
+    });
+  }
+  return res.json({ user: req.session.user });
+});
+
+// Staff-only demo route — proves RBAC works end-to-end (TC-09 pattern).
+router.get('/staff-only', requireRole('Staff'), (req, res) => {
+  res.json({ ok: true, user: req.session.user });
+});
+
+// Validation demo — proves NFR-SEC-05 + parameterised query path.
+router.post(
+  '/demo-validate',
+  validate([
+    body('phone').isLength({ min: 10, max: 10 }).isNumeric(),
+    body('bloodGroup').isIn(['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']),
+    body('name').isLength({ min: 1, max: 60 }).trim().escape(),
+  ]),
+  (req, res) => res.json({ ok: true, received: req.body })
+);
+
+// TEST-ONLY: creates a session for a real user of the requested role.
+// Guarded by NODE_ENV !== 'production'. Must be removed when real login lands.
+if (process.env.NODE_ENV !== 'production') {
+  router.post('/__dev-session', async (req, res, next) => {
+    try {
+      const role = req.body.role || 'Donor';
+      if (!['Donor', 'Hospital/Patient', 'Staff', 'Admin'].includes(role)) {
+        return res.status(400).json({
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: `Unknown role: ${role}`,
+            fields: [{ field: 'role', message: 'Must be one of the four roles' }],
+            requestId: req.id,
+          },
+        });
+      }
+      const { rows } = await query(
+        `SELECT user_id, name, role FROM users
+         WHERE role = $1 AND status = 'Active'
+         ORDER BY user_id LIMIT 1`,
+        [role]
+      );
+      if (rows.length === 0) {
+        return res.status(400).json({
+          error: {
+            code: 'NO_ACTIVE_USER',
+            message: `No active ${role} user exists. Run: npm run db:seed --prefix backend`,
+            requestId: req.id,
+          },
+        });
+      }
+      req.session.user = {
+        userId: rows[0].user_id,
+        role: rows[0].role,
+        name: rows[0].name,
+      };
+      req.session.save((err) => {
+        if (err) return next(err);
+        return res.json({ ok: true, user: req.session.user });
+      });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.post('/__dev-logout', (req, res) => {
+    req.session.destroy(() => res.json({ ok: true }));
+  });
+}
+
+module.exports = router;

@@ -1,5 +1,9 @@
+const path = require('path');
 const { Pool } = require('pg');
-require('dotenv').config();
+
+// Load backend/.env regardless of the process working directory.
+// The tests, the server, and any script can then find the same config.
+require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 
 const poolConfig = process.env.DATABASE_URL
   ? { connectionString: process.env.DATABASE_URL }
