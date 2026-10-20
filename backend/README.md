@@ -11,7 +11,7 @@ Built with Node.js, Express and PostgreSQL. It implements the C3 API Layer, mean
 > **Scope of this README: backend only.** Frontend and team-level documentation live elsewhere in the repository.
 
 > **Status: partial implementation.**
-> Implemented and verified: request tracing, sessions, RBAC, CSRF, validation, error handling, transactions, audit logging, **registration, login (with lockout) and logout**.
+> Implemented and verified: request tracing, sessions, RBAC, CSRF, validation, error handling, transactions, audit logging, registration, login (with lockout), logout, admin user management, and audit retention.
 > Not implemented: password reset and the donor, donation, stock, request and report modules (see [Section 11](#11-not-in-this-branch)).
 
 ---
@@ -59,6 +59,8 @@ Client
                          PostgreSQL 17
 ```
 
+Background: `node-cron` runs the audit retention job daily at 02:00 (Section 6.4).
+
 ### Design principles
 
 - **Deny by default.** Protected routes require an explicit `requireRole(...)`. Denials return `403` and write an audit row.
@@ -80,10 +82,13 @@ Client
 | Standard error shape | SAD 4.4 | `src/middleware/errorHandler.js` |
 | Atomic transactions | NFR-QUAL-03 | `src/database/transaction.js` |
 | Audit trail writer | NFR-SEC-02 / C12 | `src/modules/audit/audit.repository.js` |
+| Audit retention (365 days) | NFR-SEC-06 / C12 | `src/modules/audit/audit.retention.js` |
 | User registration (Donor, Hospital/Patient) | FR-AUTH-01, FR-AUTH-02, NFR-SEC-01 | `src/modules/auth/` |
 | **Login by email + password, with lockout** | FR-AUTH-03, FR-AUTH-04 | `src/modules/auth/` |
 | **Logout (session destroyed, cookie cleared)** | FR-AUTH-07 | `src/modules/auth/` |
 | Login/logout audit events | NFR-SEC-06 | `src/modules/auth/auth.service.js` |
+| Admin user management (staff create, list, status, role) | FR-ADM-01 to FR-ADM-06 | `src/modules/admin/` |
+| Audit log viewer (admin only) | FR-ADM-05 | `src/modules/admin/` |
 | Demonstration and test-only routes | n/a | `src/modules/auth/auth.routes.js` |
 
 ---
@@ -95,7 +100,8 @@ Client
 | FR-AUTH-01, FR-AUTH-02 | `POST /api/auth/register` | [Section 7.9](#79-registration-fr-auth-01-fr-auth-02-nfr-sec-01), `auth.register.test.js` |
 | FR-AUTH-03, FR-AUTH-04 | `POST /api/auth/login` | `auth.login.test.js` |
 | FR-AUTH-07 | `POST /api/auth/logout` | `auth.login.test.js` |
-| NFR-SEC-06 | Login success/failure/lock audit | `auth.login.test.js` |
+| FR-ADM-01 to FR-ADM-06 | `/api/admin/users*` | `admin.test.js` |
+| NFR-SEC-06 | Audit writes + 365-day retention | `auth.login.test.js`, `admin.test.js`, `audit.retention.test.js` |
 | NFR-SEC-01 | Registration credential handling | [Section 7.9](#79-registration-fr-auth-01-fr-auth-02-nfr-sec-01) |
 | NFR-SEC-02 | RBAC middleware + audit writer | [Section 7.5](#75-rbac-denial-as-donor-nfr-sec-02) and [Section 7.6](#76-confirm-the-audit-row-nfr-sec-02-logging-clause) |
 | NFR-SEC-04 | Session middleware (15-min idle expiry) | [Section 7.3](#73-create-a-donor-session-nfr-sec-04), [Section 7.4](#74-authenticated-request-nfr-sec-04), `session.test.js` |
@@ -175,7 +181,9 @@ npm run db:seed --prefix backend
 | `USR-STF01` | Staff |
 | `USR-ADM01` | Admin |
 
-**Seeding is required for verification.** `__dev-session` looks up a real user and returns `400 NO_ACTIVE_USER` if none exists.
+Seed password for all seeded users is `Test@1234` (per `seeds.sql`).
+
+**Seeding is required for verification.** `__dev-session` and the admin user-management endpoints look up real users and return `404` or `400 NO_ACTIVE_USER` if none exist.
 
 ---
 
@@ -190,7 +198,14 @@ npm run db:seed --prefix backend
 | `npm run db:migrate --prefix backend` | Apply `schema.sql` |
 | `npm run db:seed --prefix backend` | Load `seeds.sql` |
 
-Expected startup output: `API listening on port 5000`
+Expected startup output:
+
+```
+[audit-retention] scheduled daily at 02:00
+API listening on port 5000
+```
+
+The retention job is scheduled only when `NODE_ENV !== 'test'`.
 
 ---
 
@@ -214,6 +229,11 @@ Only these routes are mounted. Everything else is future work.
 | `POST` | `/api/auth/register` | none | Register as Donor or Hospital/Patient (FR-AUTH-01, FR-AUTH-02, NFR-SEC-01) |
 | `POST` | `/api/auth/login` | none | Authenticate by email + password. Returns session cookie on success (FR-AUTH-03, FR-AUTH-04) |
 | `POST` | `/api/auth/logout` | session | Ends the current session and clears the cookie (FR-AUTH-07) |
+| `POST` | `/api/admin/users` | Admin | Create a Staff account (FR-ADM-01) |
+| `GET` | `/api/admin/users?role=&status=&q=` | Admin | List and filter users (FR-ADM-02) |
+| `PATCH` | `/api/admin/users/{id}/status` | Admin | Activate/deactivate user; blocks last-admin deactivation (FR-ADM-03, FR-ADM-06) |
+| `PATCH` | `/api/admin/users/{id}/role` | Admin | Assign or change a user's role; blocks last-admin demotion (FR-ADM-04, FR-ADM-06) |
+| `GET` | `/api/admin/audit-logs?limit=` | Admin | Read recent audit rows (FR-ADM-05) |
 
 > **Security:** `__dev-session` and `__dev-logout` exist only when `NODE_ENV !== 'production'`.
 > Real login and logout now exist, so these helpers should be removed once nothing depends on them.
@@ -241,11 +261,24 @@ Only these routes are mounted. Everything else is future work.
 |---|---|---|
 | 400 | `VALIDATION_ERROR` | Request body failed validation |
 | 400 | `NO_ACTIVE_USER` | `__dev-session`: no active user for that role |
+| 401 | `UNAUTHENTICATED` | No session |
+| 401 | `INVALID_CREDENTIALS` | Unknown email or wrong password |
 | 403 | `ACCESS_DENIED` | Authenticated but role not permitted (audited) |
+| 403 | `ACCOUNT_INACTIVE` | Login: correct password but account inactive |
+| 403 | `SELF_ACTION_DENIED` | Admin changing own status or role |
 | 403 | `EBADCSRFTOKEN` | Missing or invalid CSRF token |
-| 404 | `NOT_FOUND` | Unknown route |
+| 404 | `NOT_FOUND` | Unknown route or unknown user |
+| 409 | `ACCOUNT_EXISTS` | Duplicate email/phone |
+| 409 | `LAST_ADMIN` | Last active admin cannot be deactivated or demoted |
+| 423 | `ACCOUNT_LOCKED` | Login lockout; `{minutesLeft}` in body |
 
-Login-specific failure codes (invalid credentials, locked account) are defined in `src/modules/auth/`. Add them to this table once finalised.
+### 6.4 Background jobs
+
+| Job | Schedule | File | Purpose |
+|---|---|---|---|
+| Audit retention | Daily at 02:00 local time | `src/modules/audit/audit.retention.js` | Deletes `audit_log` rows older than 365 days (NFR-SEC-06) |
+
+The scheduler is `node-cron`, started from `src/server.js` when `NODE_ENV !== 'test'`.
 
 ---
 
@@ -255,7 +288,7 @@ These steps prove each requirement on a live server. Run them in a **second** te
 
 - Use **`curl.exe`**, not `Invoke-WebRequest -WebSession`, which is unreliable on Windows PowerShell 5.1.
 - Run each command on its own.
-- Keep `cookies.txt` and `body.json` out of git (add them to `.gitignore`, or delete them in [Section 7.10](#710-clean-up)).
+- Keep `cookies.txt` and `body.json` out of git (add them to `.gitignore`, or delete them in [Section 7.11](#711-clean-up)).
 
 Login and logout are covered by `auth.login.test.js` (see [Section 8](#8-automated-tests)).
 
@@ -390,10 +423,46 @@ The `$2b$10$` prefix shows a bcrypt hash at 10 rounds, not plaintext (NFR-SEC-01
 Repeat with `"role":"Hospital/Patient"` and a new email and phone to cover FR-AUTH-02.
 Registering the same email again will fail, so use a fresh email each run or reseed the database.
 
-### 7.10 Clean up
+### 7.10 Admin user management (FR-ADM-01 to FR-ADM-06)
+
+Log in as the seeded admin, then create a Staff account and list users.
 
 ```powershell
-Remove-Item cookies.txt, body.json -ErrorAction SilentlyContinue
+$tokenA = (curl.exe -s -c admin-cookies.txt http://localhost:5000/api/auth/csrf | ConvertFrom-Json).csrfToken
+'{"email":"admin@bloodbank.org","password":"Test@1234"}' | Out-File -Encoding ascii -NoNewline body.json
+curl.exe -s -b admin-cookies.txt -c admin-cookies.txt -X POST http://localhost:5000/api/auth/login `
+  -H "Content-Type: application/json" `
+  -H "x-csrf-token: $tokenA" `
+  --data-binary "@body.json"
+```
+
+Expected: `{"userId":"USR-ADM01","name":"System Administrator","role":"Admin"}`
+
+Then create a Staff:
+
+```powershell
+$tokenB = (curl.exe -s -b admin-cookies.txt -c admin-cookies.txt http://localhost:5000/api/auth/csrf | ConvertFrom-Json).csrfToken
+'{"name":"Test Staff","email":"staff.test@test.local","phone":"9876500099","temporaryPassword":"TempPass123"}' | Out-File -Encoding ascii -NoNewline body.json
+curl.exe -s -b admin-cookies.txt -c admin-cookies.txt -X POST http://localhost:5000/api/admin/users `
+  -H "Content-Type: application/json" `
+  -H "x-csrf-token: $tokenB" `
+  --data-binary "@body.json"
+```
+
+Expected: `201 {"userId":"USR-STF02","name":"Test Staff","role":"Staff","status":"Active"}`
+
+List users:
+
+```powershell
+curl.exe -s -b admin-cookies.txt "http://localhost:5000/api/admin/users?role=Staff"
+```
+
+Expected: `{"users":[{...}],"total":N}` with only Staff rows.
+
+### 7.11 Clean up
+
+```powershell
+Remove-Item cookies.txt, admin-cookies.txt, body.json -ErrorAction SilentlyContinue
 ```
 
 ---
@@ -415,10 +484,12 @@ npm run lint --prefix backend
 | `transaction.test.js` | Commit and rollback (**needs a live PostgreSQL**) |
 | `auth.register.test.js` | Registration (**needs a live PostgreSQL**) |
 | `auth.login.test.js` | Login, lockout and logout (**needs a live PostgreSQL**) |
+| `admin.test.js` | Admin user management and audit (**needs a live PostgreSQL**) |
+| `audit.retention.test.js` | Audit log retention deletes rows older than 365 days (NFR-SEC-06, **needs a live PostgreSQL**) |
 
 All suites should pass and lint should print nothing (0 errors, 0 warnings).
 Suites that need a database skip automatically when `DATABASE_URL` is not set.
-Test counts change as tests are added. Record the current totals in the PR description rather than here.
+Current state at the time of writing: **10 suites, 62 tests**.
 
 ---
 
@@ -430,9 +501,9 @@ backend/
 +-- .env.example                  # SESSION_SECRET / CSRF_SECRET placeholders
 +-- src/
     +-- app.js                    # middleware chain (see Section 10)
-    +-- server.js                 # HTTP listener with EADDRINUSE guard
+    +-- server.js                 # HTTP listener + audit retention cron
     +-- config.js
-    +-- routes.js                 # mounts /health and /auth
+    +-- routes.js                 # mounts /health, /auth and /admin
     +-- middleware/
     |   +-- requestId.js          # req.id + X-Request-Id
     |   +-- session.js            # express-session + connect-pg-simple
@@ -448,12 +519,20 @@ backend/
     |   +-- migrate.js, seed.js, reset.js
     |   +-- *.test.js             # database, transaction
     +-- modules/
-        +-- audit/                # audit.repository.js: parameterised INSERT
+        +-- audit/
+        |   +-- audit.repository.js       # parameterised INSERT into audit_log
+        |   +-- audit.retention.js        # daily 365-day retention job
+        |   +-- audit.retention.test.js
         +-- auth/
         |   +-- auth.routes.js        # register, login, logout, demo and test-only routes
         |   +-- auth.service.js       # password policy, hashing, login and lockout logic
         |   +-- auth.repository.js    # data access
         |   +-- auth.*.test.js        # register, login
+        +-- admin/
+        |   +-- admin.routes.js       # /api/admin/users* and audit-logs
+        |   +-- admin.service.js      # user management + last-admin protection
+        |   +-- admin.repository.js   # data access
+        |   +-- admin.test.js
         +-- health/               # health.routes.js, health.test.js
 ```
 
@@ -489,7 +568,6 @@ Two reorderings fail silently:
 Owned by other stories. Do not assume they exist.
 
 - Password reset (FR-AUTH-05)
-- Admin account management
 - Donor management and the eligibility engine
 - Donation recording and unit creation
 - Stock management and the expiry job
@@ -507,8 +585,9 @@ Owned by other stories. Do not assume they exist.
 4. **`csrf-csrf@4` requires `getSessionIdentifier`.** It returns a random `csrfId` stored in `req.session`, created lazily on first use. It does not use `req.sessionID`, which `express-session` leaves unset when `saveUninitialized: false` and no session exists yet.
 5. **`__dev-session` uses a real seeded user.** `audit_log.user_id` is a foreign key to `users.user_id`, so a fabricated ID would make `ACCESS_DENIED` inserts fail silently and violate NFR-SEC-02's logging clause.
 6. **`__dev-session` and `__dev-logout` are test-only** (guarded by `NODE_ENV !== 'production'`). Real login and logout now exist, so these helpers should be removed once no test or workflow depends on them.
-7. **Database-backed suites need a live PostgreSQL** (`transaction`, `auth.register`, `auth.login`). They clean up after themselves and skip when `DATABASE_URL` is unset, so CI without a database does not fail.
+7. **Database-backed suites need a live PostgreSQL** (`transaction`, `auth.register`, `auth.login`, `admin`, `audit.retention`). They clean up after themselves and skip when `DATABASE_URL` is unset, so CI without a database does not fail.
 8. **`SESSION_SECRET` and `CSRF_SECRET` are mandatory in production.** Placeholders are in `backend/.env.example`.
+9. **Audit retention (NFR-SEC-06).** The retention job runs daily at 02:00 local time and deletes `audit_log` rows older than 365 days (`src/modules/audit/audit.retention.js`). The 365-day period is hard-coded to match the SRS text ("keep these logs for 1 year"). Making it configurable via `system_config` is a future enhancement, not a current requirement.
 
 ---
 
@@ -522,6 +601,7 @@ Owned by other stories. Do not assume they exist.
 | `400 NO_ACTIVE_USER` from `__dev-session` | No active user for that role. Run `npm run db:seed --prefix backend`. |
 | Login keeps failing for a known account | The account may be locked after repeated failed attempts. See the lockout logic in `src/modules/auth/auth.service.js`. |
 | `audit_log violates foreign key constraint` | The audit writer got a `user_id` that does not exist, usually from a session built with a fabricated ID. Use a seeded user. |
+| `LAST_ADMIN` on admin deactivation | You tried to deactivate the last active admin. Protected by FR-ADM-06. |
 | `connect ECONNREFUSED ::1:5432` | Migrate/seed loaded the wrong `.env`. Run from `backend/` or use `--prefix backend`. |
 | `password authentication failed` | `DB_PASSWORD` or `DATABASE_URL` in `backend/.env` is wrong. |
 
@@ -547,3 +627,4 @@ Owned by other stories. Do not assume they exist.
 - STP v1.0: `docs/test_plan_bbms.pdf` (Sections 5.1, 13.1, 13.2)
 - Digital Personal Data Protection Act, 2023 (India)
 - `csrf-csrf` v4 and `express-session` documentation
+- `node-cron` documentation
