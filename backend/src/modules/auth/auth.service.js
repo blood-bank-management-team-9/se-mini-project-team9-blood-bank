@@ -1,5 +1,4 @@
-
- // C4 Auth Service — registration business logic (SAD 3.4, 4.3).
+// C4 Auth Service - registration business logic (SAD 3.4, 4.3).
 // Business rules only; HTTP mapping lives in the route layer.
 
 const bcrypt = require('bcryptjs');
