@@ -83,6 +83,7 @@ Client
 | User registration (Donor, Hospital/Patient) | FR-AUTH-01, FR-AUTH-02, NFR-SEC-01 | `src/modules/auth/` |
 | **Login by email + password, with lockout** | FR-AUTH-03, FR-AUTH-04 | `src/modules/auth/` |
 | **Logout (session destroyed, cookie cleared)** | FR-AUTH-07 | `src/modules/auth/` |
+| Login/logout audit events | NFR-SEC-06 | `src/modules/auth/auth.service.js` |
 | Demonstration and test-only routes | n/a | `src/modules/auth/auth.routes.js` |
 
 ---
@@ -94,6 +95,7 @@ Client
 | FR-AUTH-01, FR-AUTH-02 | `POST /api/auth/register` | [Section 7.9](#79-registration-fr-auth-01-fr-auth-02-nfr-sec-01), `auth.register.test.js` |
 | FR-AUTH-03, FR-AUTH-04 | `POST /api/auth/login` | `auth.login.test.js` |
 | FR-AUTH-07 | `POST /api/auth/logout` | `auth.login.test.js` |
+| NFR-SEC-06 | Login success/failure/lock audit | `auth.login.test.js` |
 | NFR-SEC-01 | Registration credential handling | [Section 7.9](#79-registration-fr-auth-01-fr-auth-02-nfr-sec-01) |
 | NFR-SEC-02 | RBAC middleware + audit writer | [Section 7.5](#75-rbac-denial-as-donor-nfr-sec-02) and [Section 7.6](#76-confirm-the-audit-row-nfr-sec-02-logging-clause) |
 | NFR-SEC-04 | Session middleware (15-min idle expiry) | [Section 7.3](#73-create-a-donor-session-nfr-sec-04), [Section 7.4](#74-authenticated-request-nfr-sec-04), `session.test.js` |
