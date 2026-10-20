@@ -48,10 +48,80 @@ async function insertUser(tx, { userId, name, email, phone, passwordHash, role }
   );
   return rows[0];
 }
+// ---------------------------------------------------------------------------
+// Login / lockout support (issue #6: FR-AUTH-03, FR-AUTH-04, TC-02)
+// ---------------------------------------------------------------------------
 
+// Fetches everything the login service needs in one query.
+// Returns null if the email does not exist.
+async function findByEmailForLogin(email) {
+  const { rows } = await query(
+    `SELECT user_id, name, email, phone, password_hash, role, status,
+            failed_count, locked_until
+     FROM users
+     WHERE email = $1`,
+    [email]
+  );
+  return rows[0] || null;
+}
+
+// Increments failed_count atomically. Returns the new count.
+async function incrementFailedCount(userId) {
+  const { rows } = await query(
+    `UPDATE users
+        SET failed_count = failed_count + 1
+      WHERE user_id = $1
+      RETURNING failed_count`,
+    [userId]
+  );
+  return rows[0] ? rows[0].failed_count : 0;
+}
+
+// Sets locked_until to NOW() + <minutes>. Also stores the failed_count that
+// triggered the lock (5) so the account is in a consistent state.
+async function lockAccount(userId, minutes = 15) {
+  await query(
+    `UPDATE users
+        SET locked_until = NOW() + ($2 || ' minutes')::interval
+      WHERE user_id = $1`,
+    [userId, String(minutes)]
+  );
+}
+
+// Called on successful login. Resets the failure counter and clears the lock.
+async function resetLoginFailures(userId) {
+  await query(
+    `UPDATE users
+        SET failed_count = 0,
+            locked_until = NULL
+      WHERE user_id = $1`,
+    [userId]
+  );
+}
+
+// Explicit unlock — used when the lock has expired and we want to keep the
+// user state clean on the next failed attempt. (Not strictly necessary since
+// the service will reset on success, but it keeps the row readable.)
+async function clearExpiredLock(userId) {
+  await query(
+    `UPDATE users
+        SET failed_count = 0,
+            locked_until = NULL
+      WHERE user_id = $1
+        AND locked_until IS NOT NULL
+        AND locked_until <= NOW()`,
+    [userId]
+  );
+}
 module.exports = {
   findByEmail,
   findByPhone,
   maxSequenceForPrefix,
   insertUser,
+  // Login / lockout (issue #6)
+  findByEmailForLogin,
+  incrementFailedCount,
+  lockAccount,
+  resetLoginFailures,
+  clearExpiredLock,
 };

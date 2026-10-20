@@ -1,4 +1,4 @@
-// NFR-SEC-04 (session) + NFR-SEC-02 (RBAC) + NFR-SEC-05 (validation) — minimal proof routes.
+﻿// NFR-SEC-04 (session) + NFR-SEC-02 (RBAC) + NFR-SEC-05 (validation) â€” minimal proof routes.
 const router = require('express').Router();
 const { body } = require('express-validator');
 const { requireRole } = require('../../middleware/rbac');
@@ -6,6 +6,7 @@ const { validate } = require('../../middleware/validate');
 const { generateCsrfToken } = require('../../middleware/csrf');
 const { query } = require('../../database/db');
 const authService = require('./auth.service');
+
 // Issues the CSRF token for the double-submit cookie pattern.
 // Must be called once before any state-changing request.
 router.get('/csrf', (req, res, next) => {
@@ -31,12 +32,12 @@ router.get('/me', (req, res) => {
   return res.json({ user: req.session.user });
 });
 
-// Staff-only demo route — proves RBAC works end-to-end (TC-09 pattern).
+// Staff-only demo route â€” proves RBAC works end-to-end (TC-09 pattern).
 router.get('/staff-only', requireRole('Staff'), (req, res) => {
   res.json({ ok: true, user: req.session.user });
 });
 
-// Validation demo — proves NFR-SEC-05 + parameterised query path.
+// Validation demo â€” proves NFR-SEC-05 + parameterised query path.
 router.post(
   '/demo-validate',
   validate([
@@ -96,7 +97,7 @@ if (process.env.NODE_ENV !== 'production') {
     req.session.destroy(() => res.json({ ok: true }));
   });
 }
-// POST /api/auth/register — SAD 4.3, FR-AUTH-01, FR-AUTH-02, NFR-SEC-01
+// POST /api/auth/register â€” SAD 4.3, FR-AUTH-01, FR-AUTH-02, NFR-SEC-01
 router.post(
   '/register',
   validate([
@@ -146,4 +147,58 @@ router.post(
     }
   }
 );
+// POST /api/auth/login â€” SAD 4.3, SD-1, FR-AUTH-03, FR-AUTH-04
+router.post(
+  '/login',
+  validate([
+    body('email').isEmail().withMessage('Valid email is required').normalizeEmail(),
+    body('password').isString().isLength({ min: 1 }).withMessage('Password is required'),
+  ]),
+  async (req, res, next) => {
+    try {
+      const result = await authService.login({
+        email: req.body.email,
+        password: req.body.password,
+        session: req.session,
+      });
+      // Persist the session before responding so the cookie is set.
+      req.session.save((saveErr) => {
+        if (saveErr) return next(saveErr);
+        return res.status(200).json(result);
+      });
+    } catch (err) {
+      if (err instanceof authService.AuthError) {
+        return res.status(err.status).json({
+          error: {
+            code: err.code,
+            message: err.publicMessage,
+            ...err.extra, // includes { minutesLeft } on 423
+            requestId: req.id,
+          },
+        });
+      }
+      return next(err);
+    }
+  }
+);
+
+// POST /api/auth/logout â€” FR-AUTH-07
+router.post('/logout', (req, res, next) => {
+  if (!req.session || !req.session.user) {
+    return res.status(401).json({
+      error: {
+        code: 'UNAUTHENTICATED',
+        message: 'Not logged in',
+        requestId: req.id,
+      },
+    });
+  }
+  authService
+    .logout(req.session)
+    .then(() => {
+      res.clearCookie('bbms.sid');
+      return res.status(200).json({ message: 'Logged out' });
+    })
+    .catch(next);
+});
 module.exports = router;
