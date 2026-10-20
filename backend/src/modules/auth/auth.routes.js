@@ -5,7 +5,7 @@ const { requireRole } = require('../../middleware/rbac');
 const { validate } = require('../../middleware/validate');
 const { generateCsrfToken } = require('../../middleware/csrf');
 const { query } = require('../../database/db');
-
+const authService = require('./auth.service');
 // Issues the CSRF token for the double-submit cookie pattern.
 // Must be called once before any state-changing request.
 router.get('/csrf', (req, res, next) => {
@@ -96,5 +96,54 @@ if (process.env.NODE_ENV !== 'production') {
     req.session.destroy(() => res.json({ ok: true }));
   });
 }
-
+// POST /api/auth/register — SAD 4.3, FR-AUTH-01, FR-AUTH-02, NFR-SEC-01
+router.post(
+  '/register',
+  validate([
+    body('name')
+      .isLength({ min: 1, max: 60 })
+      .withMessage('Name is required (1-60 characters)')
+      .trim()
+      .escape(),
+    body('email')
+      .isEmail()
+      .withMessage('Valid email is required')
+      .isLength({ max: 60 })
+      .normalizeEmail(),
+    body('phone')
+      .isLength({ min: 10, max: 10 })
+      .withMessage('Phone must be exactly 10 digits')
+      .isNumeric()
+      .withMessage('Phone must contain only digits'),
+    body('password')
+      .isLength({ min: 8 })
+      .withMessage('Password must be at least 8 characters')
+      .matches(/[A-Z]/)
+      .withMessage('Password must contain an uppercase letter')
+      .matches(/[a-z]/)
+      .withMessage('Password must contain a lowercase letter')
+      .matches(/[0-9]/)
+      .withMessage('Password must contain a digit'),
+    body('role')
+      .isIn(['Donor', 'Hospital/Patient'])
+      .withMessage('Role must be Donor or Hospital/Patient'),
+  ]),
+  async (req, res, next) => {
+    try {
+      const result = await authService.register(req.body);
+      return res.status(201).json(result);
+    } catch (err) {
+      if (err instanceof authService.AuthError) {
+        return res.status(err.status).json({
+          error: {
+            code: err.code,
+            message: err.publicMessage,
+            requestId: req.id,
+          },
+        });
+      }
+      return next(err);
+    }
+  }
+);
 module.exports = router;
