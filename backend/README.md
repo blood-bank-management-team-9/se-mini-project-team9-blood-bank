@@ -6,13 +6,13 @@
 ![Status](https://img.shields.io/badge/status-partial%20implementation-orange)
 
 REST API for the **Blood Bank Management System (BBMS)**, Team 9.
-Built with Node.js, Express and PostgreSQL. It implements the C3 API Layer, meaning the middleware chain, security controls and data-access primitives, as specified in SAD v1.0.
+Built with Node.js, Express and PostgreSQL. It implements the C3 API Layer, meaning the middleware chain, security controls, authentication and data-access primitives, as specified in SAD v1.0.
 
 > **Scope of this README: backend only.** Frontend and team-level documentation live elsewhere in the repository.
 
 > **Status: partial implementation.**
-> Implemented and verified: request tracing, sessions, RBAC, CSRF, validation, error handling, transactions, audit logging and **user registration**.
-> Not implemented: login, password reset and the donor, donation, stock, request and report modules (see [§11](#11-not-in-this-branch)).
+> Implemented and verified: request tracing, sessions, RBAC, CSRF, validation, error handling, transactions, audit logging, **registration, login (with lockout) and logout**.
+> Not implemented: password reset and the donor, donation, stock, request and report modules (see [Section 11](#11-not-in-this-branch)).
 
 ---
 
@@ -42,19 +42,20 @@ Built with Node.js, Express and PostgreSQL. It implements the C3 API Layer, mean
 
 ```
 Client
-  │
-  ▼
-┌──────────────────────── Express (C3 API Layer) ────────────────────────┐
-│ requestId → helmet → cors → json → cookies → morgan → session → CSRF   │
-│                              │                                         │
-│                              ▼                                         │
-│                     routes → validate → requireRole → handler          │
-│                              │                                         │
-│                  notFound → errorHandler  (SAD 4.4 error shape)        │
-└──────────────────────────────┼─────────────────────────────────────────┘
-                               ▼
+  |
+  v
++----------------------- Express (C3 API Layer) -----------------------+
+| requestId -> helmet -> cors -> json -> cookies -> morgan -> session  |
+|                  -> CSRF                                             |
+|                              |                                       |
+|                              v                                       |
+|                   routes -> validate -> requireRole -> handler       |
+|                              |                                       |
+|                notFound -> errorHandler (SAD 4.4 error shape)        |
++------------------------------|---------------------------------------+
+                               v
                     withTransaction / audit repository
-                               ▼
+                               v
                          PostgreSQL 17
 ```
 
@@ -65,6 +66,7 @@ Client
 - **Traceable.** Every response carries an `X-Request-Id`, and the same ID appears in error bodies.
 - **Atomic writes.** Multi-step database changes go through `withTransaction(fn)`.
 - **Parameterised SQL only.** No string-built queries.
+- **Layered auth module.** Routes call the service, and the service calls the repository (SAD C4).
 
 ### Implemented in this branch
 
@@ -78,8 +80,10 @@ Client
 | Standard error shape | SAD 4.4 | `src/middleware/errorHandler.js` |
 | Atomic transactions | NFR-QUAL-03 | `src/database/transaction.js` |
 | Audit trail writer | NFR-SEC-02 / C12 | `src/modules/audit/audit.repository.js` |
-| **User registration** (Donor, Hospital/Patient) | FR-AUTH-01, FR-AUTH-02, NFR-SEC-01 | `src/modules/auth/` |
-| Demonstration routes (session / RBAC / validation) | n/a | `src/modules/auth/auth.routes.js` |
+| User registration (Donor, Hospital/Patient) | FR-AUTH-01, FR-AUTH-02, NFR-SEC-01 | `src/modules/auth/` |
+| **Login by email + password, with lockout** | FR-AUTH-03, FR-AUTH-04 | `src/modules/auth/` |
+| **Logout (session destroyed, cookie cleared)** | FR-AUTH-07 | `src/modules/auth/` |
+| Demonstration and test-only routes | n/a | `src/modules/auth/auth.routes.js` |
 
 ---
 
@@ -87,13 +91,15 @@ Client
 
 | Requirement | Where it is satisfied | How to verify |
 |---|---|---|
-| FR-AUTH-01, FR-AUTH-02 | `POST /api/auth/register` | [§7.9](#79-registration-fr-auth-01-fr-auth-02-nfr-sec-01) |
-| NFR-SEC-01 | Registration credential handling | [§7.9](#79-registration-fr-auth-01-fr-auth-02-nfr-sec-01) |
-| NFR-SEC-02 | RBAC middleware + audit writer | [§7.5](#75-rbac-denial-as-donor-nfr-sec-02) and [§7.6](#76-confirm-the-audit-row-nfr-sec-02-logging-clause) |
-| NFR-SEC-04 | Session middleware | [§7.3](#73-create-a-donor-session-nfr-sec-04) and [§7.4](#74-authenticated-request-nfr-sec-04) |
+| FR-AUTH-01, FR-AUTH-02 | `POST /api/auth/register` | [Section 7.9](#79-registration-fr-auth-01-fr-auth-02-nfr-sec-01), `auth.register.test.js` |
+| FR-AUTH-03, FR-AUTH-04 | `POST /api/auth/login` | `auth.login.test.js` |
+| FR-AUTH-07 | `POST /api/auth/logout` | `auth.login.test.js` |
+| NFR-SEC-01 | Registration credential handling | [Section 7.9](#79-registration-fr-auth-01-fr-auth-02-nfr-sec-01) |
+| NFR-SEC-02 | RBAC middleware + audit writer | [Section 7.5](#75-rbac-denial-as-donor-nfr-sec-02) and [Section 7.6](#76-confirm-the-audit-row-nfr-sec-02-logging-clause) |
+| NFR-SEC-04 | Session middleware (15-min idle expiry) | [Section 7.3](#73-create-a-donor-session-nfr-sec-04), [Section 7.4](#74-authenticated-request-nfr-sec-04), `session.test.js` |
 | NFR-SEC-05 | Validation middleware | `POST /api/auth/demo-validate`, `validate.test.js` |
 | NFR-QUAL-03 | Transaction helper | `transaction.test.js` |
-| SAD 4.4 | Error handler | Every error response in [§7](#7-verification) |
+| SAD 4.4 | Error handler | Every error response in [Section 7](#7-verification) |
 
 ---
 
@@ -192,19 +198,23 @@ Base URL: `http://localhost:5000`
 
 ### 6.1 Endpoints
 
+Only these routes are mounted. Everything else is future work.
+
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
 | `GET` | `/api/health` | none | Health check |
 | `GET` | `/api/auth/csrf` | none | Issues a CSRF token (sets `bbms.csrf` cookie) |
 | `GET` | `/api/auth/me` | session | Returns current session user |
 | `GET` | `/api/auth/staff-only` | Staff | Demonstrates RBAC allow and 403 paths |
-| `POST` | `/api/auth/demo-validate` | none | Demonstrates `VALIDATION_ERROR` shape |
-| `POST` | `/api/auth/__dev-session` | none, **test-only** | Creates a session for a seeded user |
+| `POST` | `/api/auth/demo-validate` | none | Demonstrates the `VALIDATION_ERROR` shape |
+| `POST` | `/api/auth/__dev-session` | none, **test-only** | Creates a session for a seeded user by role |
 | `POST` | `/api/auth/__dev-logout` | none, **test-only** | Destroys the current session |
 | `POST` | `/api/auth/register` | none | Register as Donor or Hospital/Patient (FR-AUTH-01, FR-AUTH-02, NFR-SEC-01) |
+| `POST` | `/api/auth/login` | none | Authenticate by email + password. Returns session cookie on success (FR-AUTH-03, FR-AUTH-04) |
+| `POST` | `/api/auth/logout` | session | Ends the current session and clears the cookie (FR-AUTH-07) |
 
 > **Security:** `__dev-session` and `__dev-logout` exist only when `NODE_ENV !== 'production'`.
-> **Remove them when real login is implemented.**
+> Real login and logout now exist, so these helpers should be removed once nothing depends on them.
 
 ### 6.2 Conventions
 
@@ -233,6 +243,8 @@ Base URL: `http://localhost:5000`
 | 403 | `EBADCSRFTOKEN` | Missing or invalid CSRF token |
 | 404 | `NOT_FOUND` | Unknown route |
 
+Login-specific failure codes (invalid credentials, locked account) are defined in `src/modules/auth/`. Add them to this table once finalised.
+
 ---
 
 ## 7. Verification
@@ -241,7 +253,9 @@ These steps prove each requirement on a live server. Run them in a **second** te
 
 - Use **`curl.exe`**, not `Invoke-WebRequest -WebSession`, which is unreliable on Windows PowerShell 5.1.
 - Run each command on its own.
-- Keep `cookies.txt` and `body.json` out of git (add them to `.gitignore`, or delete them in [§7.10](#710-clean-up)).
+- Keep `cookies.txt` and `body.json` out of git (add them to `.gitignore`, or delete them in [Section 7.10](#710-clean-up)).
+
+Login and logout are covered by `auth.login.test.js` (see [Section 8](#8-automated-tests)).
 
 ### 7.1 Health check
 
@@ -308,7 +322,7 @@ Expected: at least one row like:
  USR-DNR01 | ACCESS_DENIED | GET /api/auth/staff-only | 2026-10-19 23:22:48+05:30
 ```
 
-If no row appears, the audit foreign key failed. Check that `USR-DNR01` exists ([§4.4](#44-migrate-and-seed)).
+If no row appears, the audit foreign key failed. Check that `USR-DNR01` exists ([Section 4.4](#44-migrate-and-seed)).
 
 ### 7.7 RBAC allow path as Staff
 
@@ -338,27 +352,41 @@ Expected: HTTP 400 with `error.code` equal to `VALIDATION_ERROR`.
 
 ### 7.9 Registration (FR-AUTH-01, FR-AUTH-02, NFR-SEC-01)
 
-Register a new Donor, then confirm the account exists and that no plaintext password is stored.
+Register a new Donor, then confirm the password is stored as a bcrypt hash and not as plaintext.
 
 ```powershell
 $token3 = (curl.exe -s -b cookies.txt -c cookies.txt http://localhost:5000/api/auth/csrf | ConvertFrom-Json).csrfToken
-# Adjust field names to match the register validator in src/modules/auth/
-'{"role":"Donor","name":"Test Donor","email":"test.donor@example.com","password":"Str0ng!Passw0rd"}' | Out-File -Encoding ascii -NoNewline body.json
+'{"name":"Test User","email":"test1@test.local","phone":"9876500001","password":"ValidPass123","role":"Donor"}' | Out-File -Encoding ascii -NoNewline body.json
 curl.exe -s -o - -w "`nHTTP %{http_code}`n" -b cookies.txt -c cookies.txt -X POST http://localhost:5000/api/auth/register `
   -H "Content-Type: application/json" `
   -H "x-csrf-token: $token3" `
   --data-binary "@body.json"
 ```
 
-Expected: a success status (201) and a response body that **does not echo the password**.
-Repeat with `"role":"Hospital/Patient"` to cover FR-AUTH-02.
+Expected:
 
-Negative checks:
+```
+{"userId":"USR-DNR02","role":"Donor","message":"Account created successfully"}
+HTTP 201
+```
 
-- Missing or weak fields return `400 VALIDATION_ERROR`.
-- Registering the same email twice is rejected.
-- A request without `x-csrf-token` is rejected.
-- The `Admin` and `Staff` roles cannot be self-registered.
+The response does not echo the password. Now confirm the stored hash:
+
+```powershell
+& $psql -h localhost -p 5433 -U postgres -d blood_bank -c "SELECT user_id, LEFT(password_hash, 7) AS hash_prefix FROM users WHERE email = 'test1@test.local';"
+```
+
+Expected:
+
+```
+ user_id   | hash_prefix
+-----------+-------------
+ USR-DNR02 | $2b$10$
+```
+
+The `$2b$10$` prefix shows a bcrypt hash at 10 rounds, not plaintext (NFR-SEC-01).
+Repeat with `"role":"Hospital/Patient"` and a new email and phone to cover FR-AUTH-02.
+Registering the same email again will fail, so use a fresh email each run or reseed the database.
 
 ### 7.10 Clean up
 
@@ -380,11 +408,14 @@ npm run lint --prefix backend
 | `health.test.js` | Health route and `NOT_FOUND` shape |
 | `rbac.test.js` | Role allow/deny logic |
 | `validate.test.js` | `VALIDATION_ERROR` shape |
-| `session.test.js` | Session behaviour |
+| `session.test.js` | Session behaviour and idle expiry |
 | `database.test.js` | Pool and connectivity |
 | `transaction.test.js` | Commit and rollback (**needs a live PostgreSQL**) |
+| `auth.register.test.js` | Registration (**needs a live PostgreSQL**) |
+| `auth.login.test.js` | Login, lockout and logout (**needs a live PostgreSQL**) |
 
 All suites should pass and lint should print nothing (0 errors, 0 warnings).
+Suites that need a database skip automatically when `DATABASE_URL` is not set.
 Test counts change as tests are added. Record the current totals in the PR description rather than here.
 
 ---
@@ -393,31 +424,35 @@ Test counts change as tests are added. Record the current totals in the PR descr
 
 ```
 backend/
-├── package.json
-├── .env.example                  # SESSION_SECRET / CSRF_SECRET placeholders
-└── src/
-    ├── app.js                    # middleware chain (see §10)
-    ├── server.js                 # HTTP listener with EADDRINUSE guard
-    ├── config.js
-    ├── routes.js                 # mounts /health and /auth
-    ├── middleware/
-    │   ├── requestId.js          # req.id + X-Request-Id
-    │   ├── session.js            # express-session + connect-pg-simple
-    │   ├── rbac.js               # requireRole(...): deny by default, 403 + audit
-    │   ├── validate.js           # express-validator runner -> VALIDATION_ERROR
-    │   ├── csrf.js               # csrf-csrf@4 double-submit config
-    │   ├── errorHandler.js       # notFound + errorHandler (SAD 4.4 shape)
-    │   └── *.test.js             # rbac, validate, session
-    ├── database/
-    │   ├── db.js                 # pg Pool (DATABASE_URL preferred)
-    │   ├── transaction.js        # withTransaction(fn): BEGIN/COMMIT/ROLLBACK
-    │   ├── schema.sql, seeds.sql
-    │   ├── migrate.js, seed.js, reset.js
-    │   └── *.test.js             # database, transaction
-    └── modules/
-        ├── audit/                # audit.repository.js: parameterised INSERT
-        ├── auth/                 # auth.routes.js: register, demo and test-only routes
-        └── health/               # health.routes.js, health.test.js
++-- package.json
++-- .env.example                  # SESSION_SECRET / CSRF_SECRET placeholders
++-- src/
+    +-- app.js                    # middleware chain (see Section 10)
+    +-- server.js                 # HTTP listener with EADDRINUSE guard
+    +-- config.js
+    +-- routes.js                 # mounts /health and /auth
+    +-- middleware/
+    |   +-- requestId.js          # req.id + X-Request-Id
+    |   +-- session.js            # express-session + connect-pg-simple
+    |   +-- rbac.js               # requireRole(...): deny by default, 403 + audit
+    |   +-- validate.js           # express-validator runner -> VALIDATION_ERROR
+    |   +-- csrf.js               # csrf-csrf@4 double-submit config
+    |   +-- errorHandler.js       # notFound + errorHandler (SAD 4.4 shape)
+    |   +-- *.test.js             # rbac, validate, session
+    +-- database/
+    |   +-- db.js                 # pg Pool (DATABASE_URL preferred)
+    |   +-- transaction.js        # withTransaction(fn): BEGIN/COMMIT/ROLLBACK
+    |   +-- schema.sql, seeds.sql
+    |   +-- migrate.js, seed.js, reset.js
+    |   +-- *.test.js             # database, transaction
+    +-- modules/
+        +-- audit/                # audit.repository.js: parameterised INSERT
+        +-- auth/
+        |   +-- auth.routes.js        # register, login, logout, demo and test-only routes
+        |   +-- auth.service.js       # password policy, hashing, login and lockout logic
+        |   +-- auth.repository.js    # data access
+        |   +-- auth.*.test.js        # register, login
+        +-- health/               # health.routes.js, health.test.js
 ```
 
 ---
@@ -451,8 +486,8 @@ Two reorderings fail silently:
 
 Owned by other stories. Do not assume they exist.
 
-- Login (`POST /api/auth/login`) with bcrypt comparison and 5-failure lockout
-- Password reset
+- Password reset (FR-AUTH-05)
+- Admin account management
 - Donor management and the eligibility engine
 - Donation recording and unit creation
 - Stock management and the expiry job
@@ -469,8 +504,8 @@ Owned by other stories. Do not assume they exist.
 3. **CSRF is bypassed when `NODE_ENV=test`** to keep Jest/Supertest deterministic. The production path is active.
 4. **`csrf-csrf@4` requires `getSessionIdentifier`.** It returns a random `csrfId` stored in `req.session`, created lazily on first use. It does not use `req.sessionID`, which `express-session` leaves unset when `saveUninitialized: false` and no session exists yet.
 5. **`__dev-session` uses a real seeded user.** `audit_log.user_id` is a foreign key to `users.user_id`, so a fabricated ID would make `ACCESS_DENIED` inserts fail silently and violate NFR-SEC-02's logging clause.
-6. **`__dev-session` and `__dev-logout` are test-only** (guarded by `NODE_ENV !== 'production'`) and must be removed once real login exists.
-7. **`transaction.test.js` needs a live PostgreSQL.** It cleans up after itself (`system_config` keys with the `t_tx-` prefix are removed on success and rolled back on failure). CI without a database must skip it.
+6. **`__dev-session` and `__dev-logout` are test-only** (guarded by `NODE_ENV !== 'production'`). Real login and logout now exist, so these helpers should be removed once no test or workflow depends on them.
+7. **Database-backed suites need a live PostgreSQL** (`transaction`, `auth.register`, `auth.login`). They clean up after themselves and skip when `DATABASE_URL` is unset, so CI without a database does not fail.
 8. **`SESSION_SECRET` and `CSRF_SECRET` are mandatory in production.** Placeholders are in `backend/.env.example`.
 
 ---
@@ -480,9 +515,10 @@ Owned by other stories. Do not assume they exist.
 | Symptom | Cause and fix |
 |---|---|
 | `EADDRINUSE: address already in use :::5000` | A previous `nodemon` is still running. Find it with `Get-NetTCPConnection -LocalPort 5000 -State Listen \| Select-Object -ExpandProperty OwningProcess`, stop it with `Stop-Process -Id <pid> -Force`, then restart. |
-| `Cannot read properties of undefined (reading 'bbms.csrf')` | `cookie-parser` is missing or mounted after CSRF. See [§10](#10-middleware-order-do-not-reorder). |
+| `Cannot read properties of undefined (reading 'bbms.csrf')` | `cookie-parser` is missing or mounted after CSRF. See [Section 10](#10-middleware-order-do-not-reorder). |
 | `EBADCSRFTOKEN` on POST | Missing `x-csrf-token` header, or the token came from a different cookie jar. CSRF is bypassed under `NODE_ENV=test` but active in `development`. |
 | `400 NO_ACTIVE_USER` from `__dev-session` | No active user for that role. Run `npm run db:seed --prefix backend`. |
+| Login keeps failing for a known account | The account may be locked after repeated failed attempts. See the lockout logic in `src/modules/auth/auth.service.js`. |
 | `audit_log violates foreign key constraint` | The audit writer got a `user_id` that does not exist, usually from a session built with a fabricated ID. Use a seeded user. |
 | `connect ECONNREFUSED ::1:5432` | Migrate/seed loaded the wrong `.env`. Run from `backend/` or use `--prefix backend`. |
 | `password authentication failed` | `DB_PASSWORD` or `DATABASE_URL` in `backend/.env` is wrong. |
@@ -491,13 +527,14 @@ Owned by other stories. Do not assume they exist.
 
 ## 14. Contributing
 
-1. Branch from `main`, using a short descriptive name (for example `feature/auth-register`).
+1. Branch from `main`, using a short descriptive name (for example `feature/auth-login`).
 2. Do not overwrite teammates' files, including the root `README.md`. Add to them and ask before replacing.
 3. Keep SQL parameterised and wrap multi-step writes in `withTransaction`.
 4. Return errors in the SAD 4.4 shape. Never send raw exceptions to the client.
 5. Add or update tests for every behaviour change, and run `npm test` and `npm run lint` before pushing.
 6. Never commit `.env`, `cookies.txt` or credentials.
 7. In the PR description, list the requirement IDs addressed and any deviations from the SAD.
+8. Keep the endpoints table in [Section 6.1](#61-endpoints) in sync with every mounted route.
 
 ---
 

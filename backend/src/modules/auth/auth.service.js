@@ -13,13 +13,15 @@ const ROLE_PREFIXES = {
 };
 // Schema constraint: users.user_id is VARCHAR(10). See deviation note in PR.
 const MAX_SEQUENCE = 99;
-
+const MAX_FAILED_ATTEMPTS = 5;
+const LOCKOUT_MINUTES = 15;
 class AuthError extends Error {
-  constructor(code, publicMessage, status = 400) {
+  constructor(code, publicMessage, status = 400, extra = {}) {
     super(publicMessage);
     this.code = code;
     this.status = status;
     this.publicMessage = publicMessage;
+    this.extra = extra;
   }
 }
 
@@ -74,5 +76,79 @@ async function register({ name, email, phone, password, role }) {
     message: 'Account created successfully',
   };
 }
+// ---------------------------------------------------------------------------
+// Login / lockout / logout (issue #6: FR-AUTH-03, FR-AUTH-04, FR-AUTH-07)
+// ---------------------------------------------------------------------------
 
-module.exports = { register, AuthError };
+async function login({ email, password, session }) {
+  const user = await repo.findByEmailForLogin(email);
+
+  // 1. Unknown email — SAD 4.3: 401 INVALID_CREDENTIALS, same message as bad password.
+  if (!user) {
+    throw new AuthError('INVALID_CREDENTIALS', 'Invalid email or password', 401);
+  }
+
+  // 2. Locked account — SAD 4.3: 423 ACCOUNT_LOCKED, checked first, even with correct password.
+  if (user.locked_until && new Date(user.locked_until) > new Date()) {
+    const minutesLeft = Math.max(
+      1,
+      Math.ceil((new Date(user.locked_until) - new Date()) / 60000)
+    );
+    throw new AuthError(
+      'ACCOUNT_LOCKED',
+      `Account is locked. Try again in ${minutesLeft} minute(s).`,
+      423,
+      { minutesLeft }
+    );
+  }
+
+  // 3. Verify password (bcrypt). Wrong password = INVALID_CREDENTIALS, same as unknown email.
+  const passwordMatches = await bcrypt.compare(password, user.password_hash);
+
+  if (!passwordMatches) {
+    // Increment failure counter; lock on the 5th.
+    const newCount = await repo.incrementFailedCount(user.user_id);
+    if (newCount >= MAX_FAILED_ATTEMPTS) {
+      await repo.lockAccount(user.user_id, LOCKOUT_MINUTES);
+      throw new AuthError(
+        'ACCOUNT_LOCKED',
+        `Account is locked. Try again in ${LOCKOUT_MINUTES} minute(s).`,
+        423,
+        { minutesLeft: LOCKOUT_MINUTES }
+      );
+    }
+    throw new AuthError('INVALID_CREDENTIALS', 'Invalid email or password', 401);
+  }
+
+  // 4. Correct password, but account inactive — SAD 4.3: 403 ACCOUNT_INACTIVE.
+  if (user.status !== 'Active') {
+    throw new AuthError(
+      'ACCOUNT_INACTIVE',
+      'Account is inactive. Contact the administrator.',
+      403
+    );
+  }
+
+  // 5. Success — reset failure counter and clear lock, then create the session.
+  await repo.resetLoginFailures(user.user_id);
+
+  session.user = {
+    userId: user.user_id,
+    name: user.name,
+    role: user.role,
+  };
+
+  return {
+    userId: user.user_id,
+    name: user.name,
+    role: user.role,
+  };
+}
+
+async function logout(session) {
+  if (!session) return;
+  await new Promise((resolve, reject) => {
+    session.destroy((err) => (err ? reject(err) : resolve()));
+  });
+}
+module.exports = { register, login, logout, AuthError };
