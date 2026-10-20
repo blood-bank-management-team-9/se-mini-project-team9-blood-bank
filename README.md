@@ -9,8 +9,8 @@ A web application for managing blood donors, donations, blood stock and blood re
 Software Engineering (UE24CS341A) mini-project, Section C, PES University, Bangalore.
 
 > **Status: work in progress.**
-> The middleware layer and registration are implemented and verified.
-> Login, donor, donation, stock, request and report modules are being built on their own branches.
+> The middleware layer, registration, login, logout, admin user management and audit retention are implemented and verified.
+> Password reset and the donor, donation, stock, request and report modules are being built on their own branches.
 > See [Project status](#project-status).
 
 ---
@@ -65,8 +65,14 @@ Requirements are traced to the SRS, SAD and Test Plan (see [Documentation](#docu
 | Registration (`POST /api/auth/register`) | FR-AUTH-01, FR-AUTH-02, SAD 4.3 | #5 `feature/auth-register` |
 | Password policy + bcrypt hashing | NFR-SEC-01 | #5 |
 | Auth data-access layer | SAD C4 | #5 |
+| Login by email + password, with lockout (`POST /api/auth/login`) | FR-AUTH-03, FR-AUTH-04 | #6 `feature/auth-login` |
+| Logout (`POST /api/auth/logout`) | FR-AUTH-07 | #6 |
+| Session expiry tests | NFR-SEC-04 | #6 |
+| Admin user management: create Staff, list/filter, activate/deactivate, change role, last-admin protection | FR-ADM-01 to FR-ADM-06 | #7 `feature/admin-users` |
+| Audit log viewer (admin only) | FR-ADM-05 | #7 |
+| Audit retention job (365 days, daily at 02:00) | NFR-SEC-06 | #8 `feature/audit-retention` |
 
-Key files live under `backend/src/middleware/`, `backend/src/database/transaction.js`, `backend/src/modules/audit/` and `backend/src/modules/auth/`.
+Key files live under `backend/src/middleware/`, `backend/src/database/transaction.js`, `backend/src/modules/audit/`, `backend/src/modules/auth/` and `backend/src/modules/admin/`.
 
 ### Not yet implemented
 
@@ -74,9 +80,7 @@ Owned by other stories. Do not assume they exist.
 
 | Module | Requirements |
 |---|---|
-| Login and session creation | FR-AUTH-03, FR-AUTH-04 |
 | Password reset | FR-AUTH-05 |
-| Admin account management | FR-ADM-01 to FR-ADM-06 |
 | Donor management and eligibility engine | FR-DON-01 to FR-DON-08 |
 | Blood donation recording | FR-DNR-01 to FR-DNR-06 |
 | Blood stock management and expiry job | FR-STK-01 to FR-STK-07 |
@@ -94,6 +98,7 @@ Owned by other stories. Do not assume they exist.
 | Backend | Node.js 20+ with Express 4 |
 | Database | PostgreSQL 17 (dev uses port **5433**, not the default 5432) |
 | Security | express-session, `csrf-csrf@4`, helmet, bcrypt |
+| Background jobs | node-cron (audit retention) |
 | Tests | Jest + Supertest, ESLint |
 
 ---
@@ -102,18 +107,18 @@ Owned by other stories. Do not assume they exist.
 
 ```
 se-mini-project-team9-blood-bank/
-├── backend/                  Express API
-│   ├── src/
-│   │   ├── app.js            middleware chain
-│   │   ├── server.js         HTTP listener
-│   │   ├── routes.js         route mounting
-│   │   ├── middleware/       requestId, session, rbac, validate, csrf, errorHandler
-│   │   ├── database/         pool, transaction helper, schema, seeds, migrate/seed/reset
-│   │   └── modules/          audit, auth, health
-│   └── README.md             backend setup, verification, deviations
-├── frontend/                 React (Vite) client
-├── docs/                     SRS, SAD, Test Plan
-└── README.md                 this file
++-- backend/                  Express API
+|   +-- src/
+|   |   +-- app.js            middleware chain
+|   |   +-- server.js         HTTP listener
+|   |   +-- routes.js         route mounting
+|   |   +-- middleware/       requestId, session, rbac, validate, csrf, errorHandler
+|   |   +-- database/         pool, transaction helper, schema, seeds, migrate/seed/reset
+|   |   +-- modules/          audit, auth, admin, health
+|   +-- README.md             backend setup, verification, deviations
++-- frontend/                 React (Vite) client
++-- docs/                     SRS, SAD, Test Plan
++-- README.md                 this file
 ```
 
 ---
@@ -218,7 +223,9 @@ The seed creates one user per role:
 | `USR-STF01` | Staff |
 | `USR-ADM01` | Admin |
 
-Seeding is required for authentication flows and for the test suites that use a live database.
+Seed password for all seeded users is `Test@1234` (per `seeds.sql`).
+
+Seeding is required for authentication flows, admin endpoints and the test suites that use a live database.
 
 ### 7. Start the apps
 
@@ -268,7 +275,7 @@ From the repository root:
 
 ## API endpoints
 
-Base URL: `http://localhost:5000`. Request and response examples are in [`backend/README.md`](backend/README.md).
+Base URL: `http://localhost:5000`. Details and conventions are in [`backend/README.md`](backend/README.md).
 
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
@@ -280,8 +287,15 @@ Base URL: `http://localhost:5000`. Request and response examples are in [`backen
 | `POST` | `/api/auth/__dev-session` | none, **test-only** | Creates a session for a seeded user |
 | `POST` | `/api/auth/__dev-logout` | none, **test-only** | Destroys the current session |
 | `POST` | `/api/auth/register` | none | Register as Donor or Hospital/Patient (FR-AUTH-01, FR-AUTH-02, NFR-SEC-01) |
+| `POST` | `/api/auth/login` | none | Authenticate by email + password. Returns session cookie on success (FR-AUTH-03, FR-AUTH-04) |
+| `POST` | `/api/auth/logout` | session | Ends the current session and clears the cookie (FR-AUTH-07) |
+| `POST` | `/api/admin/users` | Admin | Create a Staff account (FR-ADM-01) |
+| `GET` | `/api/admin/users?role=&status=&q=` | Admin | List and filter users (FR-ADM-02) |
+| `PATCH` | `/api/admin/users/{id}/status` | Admin | Activate/deactivate user; blocks last-admin deactivation (FR-ADM-03, FR-ADM-06) |
+| `PATCH` | `/api/admin/users/{id}/role` | Admin | Assign or change a user's role; blocks last-admin demotion (FR-ADM-04, FR-ADM-06) |
+| `GET` | `/api/admin/audit-logs?limit=` | Admin | Read recent audit rows (FR-ADM-05) |
 
-- The `__dev-*` routes exist only when `NODE_ENV !== 'production'` and are removed when real login lands.
+- The `__dev-*` routes exist only when `NODE_ENV !== 'production'`. They are test helpers and should be removed once nothing depends on them.
 - All errors use one shape: `{ "error": { "code", "message", "requestId" } }` (SAD 4.4).
 - State-changing requests need an `x-csrf-token` header obtained from `GET /api/auth/csrf`.
 
@@ -295,19 +309,15 @@ npm test                             # Jest + Supertest (backend)
 npm --prefix frontend run build      # frontend build check
 ```
 
-Last recorded result on `feature/nfr-sec-mw` + `feature/auth-register`:
+Run `npm test` and record the current suite and test totals in your PR description. Do not copy old numbers into this file.
 
-```
-Test Suites: 7 passed, 7 total
-Tests:       30 passed, 30 total
-```
-
-Re-run `npm test` before committing this file. If the totals differ, update them here.
-
-Two suites need a live PostgreSQL. They use `describeIfDatabase` and **skip automatically** when `DATABASE_URL` is not set, so CI without a database does not fail:
+Suites that need a live PostgreSQL use `describeIfDatabase` and **skip automatically** when `DATABASE_URL` is not set, so CI without a database does not fail:
 
 - `backend/src/database/transaction.test.js` (NFR-QUAL-03)
 - `backend/src/modules/auth/auth.register.test.js` (FR-AUTH-01, FR-AUTH-02)
+- `backend/src/modules/auth/auth.login.test.js` (FR-AUTH-03, FR-AUTH-04, FR-AUTH-07)
+- `backend/src/modules/admin/admin.test.js` (FR-ADM-01 to FR-ADM-06)
+- `backend/src/modules/audit/audit.retention.test.js` (NFR-SEC-06)
 
 ---
 
@@ -336,6 +346,8 @@ Never commit `backend/.env`, `cookies.txt` or `body.json`.
 | `connect ECONNREFUSED` on `npm test` | `backend/.env` is missing or `DATABASE_URL` is unset. See step 4. |
 | `EBADCSRFTOKEN` from `curl` | Call `GET /api/auth/csrf` first, keep the cookie jar, and send `x-csrf-token` on the POST. CSRF is bypassed only under `NODE_ENV=test`. |
 | `400 NO_ACTIVE_USER` from `__dev-session` | Seeds not loaded. Run `npm run db:seed --prefix backend`. |
+| Login keeps failing for a known account | The account may be locked after repeated failed attempts. See `backend/README.md`. |
+| `LAST_ADMIN` on admin deactivation | You tried to deactivate or demote the last active admin. Protected by FR-ADM-06. |
 | `audit_log violates foreign key constraint` | The session user's ID does not exist in `users`. Use a seeded user. |
 | `password authentication failed` | `DB_PASSWORD` or `DATABASE_URL` in `backend/.env` is wrong. |
 
