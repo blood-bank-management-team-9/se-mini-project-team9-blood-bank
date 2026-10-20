@@ -1,14 +1,364 @@
-# Blood Bank Management – Team 9
+# Blood Bank Management System (BBMS): Team 9
 
-## Structure (SAD 4.1)
-- `backend/` – Express API (`routes → controllers → services → models`)
-- `frontend/` – React (Vite) client
-- `docs/` – SRS, SAD, Test Plan
+![Status](https://img.shields.io/badge/status-work%20in%20progress-orange)
+![Node](https://img.shields.io/badge/node-%3E%3D20-339933?logo=node.js&logoColor=white)
+![React](https://img.shields.io/badge/react-18-61DAFB?logo=react&logoColor=black)
+![PostgreSQL](https://img.shields.io/badge/postgresql-17-4169E1?logo=postgresql&logoColor=white)
 
-## Run
-```bash
-npm run install:all
-cp backend/.env.example backend/.env
-npm run dev        # API :5000, UI :5173
-npm test           # Jest + Supertest
+A web application for managing blood donors, donations, blood stock and blood requests.
+Software Engineering (UE24CS341A) mini-project, Section C, PES University, Bangalore.
+
+> **Status: work in progress.**
+> The middleware layer and registration are implemented and verified.
+> Login, donor, donation, stock, request and report modules are being built on their own branches.
+> See [Project status](#project-status).
+
+---
+
+## Contents
+
+1. [Overview](#overview)
+2. [Project status](#project-status)
+3. [Tech stack](#tech-stack)
+4. [Repository structure](#repository-structure)
+5. [Prerequisites](#prerequisites)
+6. [Quick start: first-time setup](#quick-start-first-time-setup)
+7. [Common commands](#common-commands)
+8. [API endpoints](#api-endpoints)
+9. [Testing](#testing)
+10. [Development workflow](#development-workflow)
+11. [Troubleshooting](#troubleshooting)
+12. [Documentation](#documentation)
+13. [Team](#team)
+
+---
+
+## Overview
+
+BBMS supports four user roles:
+
+| Role | Purpose |
+|---|---|
+| Donor | Register, view eligibility and donation history |
+| Hospital/Patient | Register and request blood |
+| Staff | Record donations, manage stock, handle requests |
+| Admin | Manage accounts and view reports |
+
+Requirements are traced to the SRS, SAD and Test Plan (see [Documentation](#documentation)).
+
+---
+
+## Project status
+
+### Implemented and verified
+
+| Area | Requirement | Issue / branch |
+|---|---|---|
+| Request ID on every response | SAD 4.4 | #4 `feature/nfr-sec-mw` |
+| Sessions (15-min idle, HttpOnly, Secure) | NFR-SEC-04 | #4 |
+| RBAC (deny by default, 403 + audit) | NFR-SEC-02 | #4 |
+| Input validation | NFR-SEC-05 | #4 |
+| CSRF double-submit (`csrf-csrf@4`) | SAD 3.6 | #4 |
+| Standard error shape | SAD 4.4 | #4 |
+| Atomic transactions | NFR-QUAL-03 | #4 |
+| Audit trail writer | NFR-SEC-02 | #4 |
+| Registration (`POST /api/auth/register`) | FR-AUTH-01, FR-AUTH-02, SAD 4.3 | #5 `feature/auth-register` |
+| Password policy + bcrypt hashing | NFR-SEC-01 | #5 |
+| Auth data-access layer | SAD C4 | #5 |
+
+Key files live under `backend/src/middleware/`, `backend/src/database/transaction.js`, `backend/src/modules/audit/` and `backend/src/modules/auth/`.
+
+### Not yet implemented
+
+Owned by other stories. Do not assume they exist.
+
+| Module | Requirements |
+|---|---|
+| Login and session creation | FR-AUTH-03, FR-AUTH-04 |
+| Password reset | FR-AUTH-05 |
+| Admin account management | FR-ADM-01 to FR-ADM-06 |
+| Donor management and eligibility engine | FR-DON-01 to FR-DON-08 |
+| Blood donation recording | FR-DNR-01 to FR-DNR-06 |
+| Blood stock management and expiry job | FR-STK-01 to FR-STK-07 |
+| Blood request handling with FEFO | FR-REQ-01 to FR-REQ-08 |
+| Reports | FR-RPT-01 to FR-RPT-06 |
+| UI beyond the health-check page | n/a |
+
+---
+
+## Tech stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | React 18 + Vite |
+| Backend | Node.js 20+ with Express 4 |
+| Database | PostgreSQL 17 (dev uses port **5433**, not the default 5432) |
+| Security | express-session, `csrf-csrf@4`, helmet, bcrypt |
+| Tests | Jest + Supertest, ESLint |
+
+---
+
+## Repository structure
+
 ```
+se-mini-project-team9-blood-bank/
+├── backend/                  Express API
+│   ├── src/
+│   │   ├── app.js            middleware chain
+│   │   ├── server.js         HTTP listener
+│   │   ├── routes.js         route mounting
+│   │   ├── middleware/       requestId, session, rbac, validate, csrf, errorHandler
+│   │   ├── database/         pool, transaction helper, schema, seeds, migrate/seed/reset
+│   │   └── modules/          audit, auth, health
+│   └── README.md             backend setup, verification, deviations
+├── frontend/                 React (Vite) client
+├── docs/                     SRS, SAD, Test Plan
+└── README.md                 this file
+```
+
+---
+
+## Prerequisites
+
+| Tool | Version | Notes |
+|---|---|---|
+| Node.js | 20 or later | Verified with 24.15.0 |
+| npm | bundled with Node | |
+| PostgreSQL | 17 | Verified with `postgresql-x64-17` on port **5433** |
+| Git | any recent version | |
+
+If your PostgreSQL runs on a different port, set it in `backend/.env` (step 4 below).
+
+---
+
+## Quick start: first-time setup
+
+Run everything from the repository root.
+
+### 1. Clone
+
+```powershell
+git clone https://github.com/blood-bank-management-team-9/se-mini-project-team9-blood-bank.git
+cd se-mini-project-team9-blood-bank
+git checkout main
+```
+
+### 2. Install dependencies
+
+```powershell
+npm run install:all
+```
+
+This installs the root, `backend/` and `frontend/` dependencies.
+
+### 3. Confirm PostgreSQL is running
+
+```powershell
+Get-Service postgresql-x64-17
+Test-NetConnection localhost -Port 5433
+```
+
+Expected: `Status : Running` and `TcpTestSucceeded : True`.
+If the service is stopped, run `Start-Service postgresql-x64-17`.
+If your PostgreSQL uses the default port 5432, use `5432` in the steps below.
+
+### 4. Configure `backend/.env`
+
+```powershell
+Copy-Item backend\.env.example backend\.env
+```
+
+Edit `backend\.env` with at least:
+
+```dotenv
+PORT=5000
+NODE_ENV=development
+
+DATABASE_URL=postgresql://postgres:<your-password>@localhost:5433/blood_bank
+DB_HOST=localhost
+DB_PORT=5433
+DB_NAME=blood_bank
+DB_USER=postgres
+DB_PASSWORD=<your-password>
+
+SESSION_SECRET=<random 48-byte base64>
+CSRF_SECRET=<random 48-byte base64>
+```
+
+Generate each secret (run twice, one output per secret):
+
+```powershell
+[Convert]::ToBase64String((1..48 | ForEach-Object { Get-Random -Maximum 256 }))
+```
+
+**Never commit `backend/.env`** (it is gitignored) and never paste secrets into chat or PRs.
+
+### 5. Create the database (once per machine)
+
+```powershell
+$psql = "D:\Postgres\bin\psql.exe"   # adjust to your install location
+& $psql -h localhost -p 5433 -U postgres -d postgres -c "CREATE DATABASE blood_bank;"
+```
+
+Skip this if the database already exists.
+
+### 6. Run migrations and seeds
+
+```powershell
+npm run db:migrate --prefix backend
+npm run db:seed --prefix backend
+```
+
+The seed creates one user per role:
+
+| User ID | Role |
+|---|---|
+| `USR-DNR01` | Donor |
+| `USR-HSP01` | Hospital/Patient |
+| `USR-STF01` | Staff |
+| `USR-ADM01` | Admin |
+
+Seeding is required for authentication flows and for the test suites that use a live database.
+
+### 7. Start the apps
+
+```powershell
+npm run dev                      # API and UI together
+npm run dev --prefix backend     # API only
+```
+
+- API: `http://localhost:5000`
+- UI: `http://localhost:5173`
+
+Expected backend output: `API listening on port 5000`
+
+### 8. Verify the backend
+
+In a second terminal:
+
+```powershell
+curl.exe -s http://localhost:5000/api/health
+```
+
+Expected: `{"status":"ok","service":"blood-bank-api","timestamp":"..."}`
+
+For the full verification sequence (sessions, RBAC, audit rows, registration), see [`backend/README.md`](backend/README.md).
+
+---
+
+## Common commands
+
+From the repository root:
+
+| Command | What it does |
+|---|---|
+| `npm run install:all` | Install root, backend and frontend dependencies |
+| `npm run dev` | Start backend and frontend together |
+| `npm run dev --prefix backend` | Start only the backend |
+| `npm test` | Run backend Jest + Supertest suites |
+| `npm run lint` | Run backend ESLint |
+| `npm run db:migrate --prefix backend` | Apply `schema.sql` |
+| `npm run db:seed --prefix backend` | Load seed data |
+| `npm --prefix frontend run build` | Produce the production frontend build |
+
+> **Warning:** do not run `npm run db:reset --prefix backend` on a database whose data you care about.
+> It drops the project tables and re-runs migrations.
+
+---
+
+## API endpoints
+
+Base URL: `http://localhost:5000`. Request and response examples are in [`backend/README.md`](backend/README.md).
+
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| `GET` | `/api/health` | none | Health check |
+| `GET` | `/api/auth/csrf` | none | Issues a CSRF token (sets `bbms.csrf` cookie) |
+| `GET` | `/api/auth/me` | session | Returns current session user |
+| `GET` | `/api/auth/staff-only` | Staff | Demonstrates RBAC allow and 403 paths |
+| `POST` | `/api/auth/demo-validate` | none | Demonstrates `VALIDATION_ERROR` shape |
+| `POST` | `/api/auth/__dev-session` | none, **test-only** | Creates a session for a seeded user |
+| `POST` | `/api/auth/__dev-logout` | none, **test-only** | Destroys the current session |
+| `POST` | `/api/auth/register` | none | Register as Donor or Hospital/Patient (FR-AUTH-01, FR-AUTH-02, NFR-SEC-01) |
+
+- The `__dev-*` routes exist only when `NODE_ENV !== 'production'` and are removed when real login lands.
+- All errors use one shape: `{ "error": { "code", "message", "requestId" } }` (SAD 4.4).
+- State-changing requests need an `x-csrf-token` header obtained from `GET /api/auth/csrf`.
+
+---
+
+## Testing
+
+```powershell
+npm run lint                         # ESLint (backend)
+npm test                             # Jest + Supertest (backend)
+npm --prefix frontend run build      # frontend build check
+```
+
+Last recorded result on `feature/nfr-sec-mw` + `feature/auth-register`:
+
+```
+Test Suites: 7 passed, 7 total
+Tests:       30 passed, 30 total
+```
+
+Re-run `npm test` before committing this file. If the totals differ, update them here.
+
+Two suites need a live PostgreSQL. They use `describeIfDatabase` and **skip automatically** when `DATABASE_URL` is not set, so CI without a database does not fail:
+
+- `backend/src/database/transaction.test.js` (NFR-QUAL-03)
+- `backend/src/modules/auth/auth.register.test.js` (FR-AUTH-01, FR-AUTH-02)
+
+---
+
+## Development workflow
+
+1. Branch from `main` (or from the active feature branch if your work depends on unmerged middleware).
+2. Implement against the SRS, SAD and STP. Note any deviations in the PR description.
+3. Run `npm run lint` and `npm test` before pushing.
+4. Open a PR against `main` with:
+   - `Closes #N`
+   - the requirements, SAD reference and STP test cases it covers
+   - explicit deviations the reviewer must acknowledge
+5. Merge after CI is green and a reviewer approves.
+
+Keep PRs focused. A documentation rewrite goes in its own `docs/` branch, not inside a feature PR.
+Never commit `backend/.env`, `cookies.txt` or `body.json`.
+
+---
+
+## Troubleshooting
+
+| Symptom | Cause and fix |
+|---|---|
+| `EADDRINUSE: address already in use :::5000` | A previous `nodemon` is still running. Run `Get-NetTCPConnection -LocalPort 5000 -State Listen \| Select-Object -ExpandProperty OwningProcess`, then `Stop-Process -Id <pid> -Force`. |
+| `connect ECONNREFUSED ::1:5432` | Wrong port. The dev DB is on **5433**. Check `DATABASE_URL` and `DB_PORT` in `backend/.env`. |
+| `connect ECONNREFUSED` on `npm test` | `backend/.env` is missing or `DATABASE_URL` is unset. See step 4. |
+| `EBADCSRFTOKEN` from `curl` | Call `GET /api/auth/csrf` first, keep the cookie jar, and send `x-csrf-token` on the POST. CSRF is bypassed only under `NODE_ENV=test`. |
+| `400 NO_ACTIVE_USER` from `__dev-session` | Seeds not loaded. Run `npm run db:seed --prefix backend`. |
+| `audit_log violates foreign key constraint` | The session user's ID does not exist in `users`. Use a seeded user. |
+| `password authentication failed` | `DB_PASSWORD` or `DATABASE_URL` in `backend/.env` is wrong. |
+
+---
+
+## Documentation
+
+| Document | Location |
+|---|---|
+| SRS v1.1 | [`docs/SRS_bbms.docx.pdf`](docs/SRS_bbms.docx.pdf) |
+| SAD v1.0 | [`docs/sad_bbms_09.pdf`](docs/sad_bbms_09.pdf) |
+| STP v1.0 | [`docs/test_plan_bbms.pdf`](docs/test_plan_bbms.pdf) |
+| Backend setup, verification and deviations | [`backend/README.md`](backend/README.md) |
+
+---
+
+## Team
+
+| Role | Name | SRN |
+|---|---|---|
+| Product Owner | Harsimran Kaur | PES1UG24CS187 |
+| Developer | Gautam Prasanth Nair | PES1UG24CS169 |
+| QA Lead | Dheepak Seetharam | PES1UG24CS152 |
+| Test Engineer | Chukkapalli Rohan | PES1UG24CS135 |
+
+PES University, Bangalore. Software Engineering (UE24CS341A), Section C, Team 9.
