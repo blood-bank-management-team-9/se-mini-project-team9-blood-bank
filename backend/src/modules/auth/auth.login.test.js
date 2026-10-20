@@ -1,6 +1,6 @@
 // STP TC-02 (lockout after 5 failures, correct password refused during lock)
 // STP TC-19 partial (role-based login for each role)
-// FR-AUTH-03, FR-AUTH-04, FR-AUTH-07.
+// FR-AUTH-03, FR-AUTH-04, FR-AUTH-07, NFR-SEC-06.
 
 const request = require('supertest');
 const app = require('../../app');
@@ -116,6 +116,46 @@ describeIfDb('POST /api/auth/login', () => {
       .send({ email: SEED_USERS.Donor.email });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  // NFR-SEC-06: login events must be written to audit_log with user ID and timestamp.
+  // NFR-SEC-07: no raw email in logs — only email_masked.
+  it('writes LOGIN_SUCCESS and LOGIN_FAILED rows to audit_log (NFR-SEC-06)', async () => {
+    // Clear prior audit rows for the donor so we can assert only the new ones.
+    await db.query(
+      `DELETE FROM audit_log
+        WHERE user_id = (SELECT user_id FROM users WHERE email = $1)`,
+      [SEED_USERS.Donor.email]
+    );
+
+    // Successful login.
+    const okRes = await request(app)
+      .post('/api/auth/login')
+      .send({ email: SEED_USERS.Donor.email, password: SEED_PASSWORD });
+    expect(okRes.status).toBe(200);
+
+    // Failed login.
+    const badRes = await request(app)
+      .post('/api/auth/login')
+      .send({ email: SEED_USERS.Donor.email, password: 'WrongPass123' });
+    expect(badRes.status).toBe(401);
+
+    const { rows } = await db.query(
+      `SELECT action, new_value
+         FROM audit_log
+        WHERE user_id = (SELECT user_id FROM users WHERE email = $1)
+        ORDER BY created_at DESC
+        LIMIT 2`,
+      [SEED_USERS.Donor.email]
+    );
+    const actions = rows.map((r) => r.action).sort();
+    expect(actions).toEqual(['LOGIN_FAILED', 'LOGIN_SUCCESS']);
+
+    // The masked email must be present and the raw email must not.
+    for (const row of rows) {
+      expect(row.new_value.email_masked).toBeDefined();
+      expect(JSON.stringify(row.new_value)).not.toContain(SEED_USERS.Donor.email);
+    }
   });
 });
 

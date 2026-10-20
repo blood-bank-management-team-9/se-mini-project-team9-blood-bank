@@ -1,8 +1,10 @@
-// C4 Auth Service — registration business logic (SAD 3.4, 4.3).
+
+ // C4 Auth Service — registration business logic (SAD 3.4, 4.3).
 // Business rules only; HTTP mapping lives in the route layer.
 
 const bcrypt = require('bcryptjs');
 const { withTransaction } = require('../../database/transaction');
+const { logAudit } = require('../audit/audit.repository');
 const repo = require('./auth.repository');
 
 const BCRYPT_ROUNDS = 10;
@@ -11,10 +13,12 @@ const ROLE_PREFIXES = {
   Donor: 'USR-DNR',
   'Hospital/Patient': 'USR-HSP',
 };
+
 // Schema constraint: users.user_id is VARCHAR(10). See deviation note in PR.
 const MAX_SEQUENCE = 99;
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_MINUTES = 15;
+
 class AuthError extends Error {
   constructor(code, publicMessage, status = 400, extra = {}) {
     super(publicMessage);
@@ -39,6 +43,7 @@ async function register({ name, email, phone, password, role }) {
   if (await repo.findByEmail(email)) {
     throw new AuthError('ACCOUNT_EXISTS', 'Account already exists', 409);
   }
+
   if (await repo.findByPhone(phone)) {
     throw new AuthError('ACCOUNT_EXISTS', 'Account already exists', 409);
   }
@@ -76,24 +81,64 @@ async function register({ name, email, phone, password, role }) {
     message: 'Account created successfully',
   };
 }
+
 // ---------------------------------------------------------------------------
 // Login / lockout / logout (issue #6: FR-AUTH-03, FR-AUTH-04, FR-AUTH-07)
 // ---------------------------------------------------------------------------
 
+// Mask email addresses before including them in audit logs.
+function maskEmail(email) {
+  if (typeof email !== 'string') return null;
+
+  const atIndex = email.indexOf('@');
+
+  if (atIndex <= 0) return '***';
+
+  return `${email[0]}***${email.slice(atIndex)}`;
+}
+
 async function login({ email, password, session }) {
   const user = await repo.findByEmailForLogin(email);
 
-  // 1. Unknown email — SAD 4.3: 401 INVALID_CREDENTIALS, same message as bad password.
+  // 1. Unknown email — 401, same message as wrong password.
   if (!user) {
-    throw new AuthError('INVALID_CREDENTIALS', 'Invalid email or password', 401);
+    await logAudit({
+      userId: null,
+      action: 'LOGIN_FAILED',
+      entity: 'users',
+      entityId: null,
+      newValue: {
+        email_masked: maskEmail(email),
+        reason: 'unknown_email',
+      },
+    });
+
+    throw new AuthError(
+      'INVALID_CREDENTIALS',
+      'Invalid email or password',
+      401
+    );
   }
 
-  // 2. Locked account — SAD 4.3: 423 ACCOUNT_LOCKED, checked first, even with correct password.
+  // 2. Locked account — checked before password verification.
   if (user.locked_until && new Date(user.locked_until) > new Date()) {
     const minutesLeft = Math.max(
       1,
       Math.ceil((new Date(user.locked_until) - new Date()) / 60000)
     );
+
+    await logAudit({
+      userId: user.user_id,
+      action: 'LOGIN_FAILED',
+      entity: 'users',
+      entityId: user.user_id,
+      newValue: {
+        email_masked: maskEmail(email),
+        reason: 'locked',
+        minutes_left: minutesLeft,
+      },
+    });
+
     throw new AuthError(
       'ACCOUNT_LOCKED',
       `Account is locked. Try again in ${minutesLeft} minute(s).`,
@@ -102,14 +147,31 @@ async function login({ email, password, session }) {
     );
   }
 
-  // 3. Verify password (bcrypt). Wrong password = INVALID_CREDENTIALS, same as unknown email.
-  const passwordMatches = await bcrypt.compare(password, user.password_hash);
+  // 3. Verify password.
+  const passwordMatches = await bcrypt.compare(
+    password,
+    user.password_hash
+  );
 
   if (!passwordMatches) {
-    // Increment failure counter; lock on the 5th.
     const newCount = await repo.incrementFailedCount(user.user_id);
+
+    // Lock the account after the fifth failed attempt.
     if (newCount >= MAX_FAILED_ATTEMPTS) {
       await repo.lockAccount(user.user_id, LOCKOUT_MINUTES);
+
+      await logAudit({
+        userId: user.user_id,
+        action: 'LOGIN_LOCKED',
+        entity: 'users',
+        entityId: user.user_id,
+        newValue: {
+          email_masked: maskEmail(email),
+          reason: 'max_failures',
+          failed_count: newCount,
+        },
+      });
+
       throw new AuthError(
         'ACCOUNT_LOCKED',
         `Account is locked. Try again in ${LOCKOUT_MINUTES} minute(s).`,
@@ -117,11 +179,39 @@ async function login({ email, password, session }) {
         { minutesLeft: LOCKOUT_MINUTES }
       );
     }
-    throw new AuthError('INVALID_CREDENTIALS', 'Invalid email or password', 401);
+
+    await logAudit({
+      userId: user.user_id,
+      action: 'LOGIN_FAILED',
+      entity: 'users',
+      entityId: user.user_id,
+      newValue: {
+        email_masked: maskEmail(email),
+        reason: 'bad_password',
+        failed_count: newCount,
+      },
+    });
+
+    throw new AuthError(
+      'INVALID_CREDENTIALS',
+      'Invalid email or password',
+      401
+    );
   }
 
-  // 4. Correct password, but account inactive — SAD 4.3: 403 ACCOUNT_INACTIVE.
+  // 4. Correct password, but account is inactive.
   if (user.status !== 'Active') {
+    await logAudit({
+      userId: user.user_id,
+      action: 'LOGIN_FAILED',
+      entity: 'users',
+      entityId: user.user_id,
+      newValue: {
+        email_masked: maskEmail(email),
+        reason: 'inactive',
+      },
+    });
+
     throw new AuthError(
       'ACCOUNT_INACTIVE',
       'Account is inactive. Contact the administrator.',
@@ -129,8 +219,19 @@ async function login({ email, password, session }) {
     );
   }
 
-  // 5. Success — reset failure counter and clear lock, then create the session.
+  // 5. Successful login — reset failures and record the audit event.
   await repo.resetLoginFailures(user.user_id);
+
+  await logAudit({
+    userId: user.user_id,
+    action: 'LOGIN_SUCCESS',
+    entity: 'users',
+    entityId: user.user_id,
+    newValue: {
+      email_masked: maskEmail(email),
+      role: user.role,
+    },
+  });
 
   session.user = {
     userId: user.user_id,
@@ -147,8 +248,10 @@ async function login({ email, password, session }) {
 
 async function logout(session) {
   if (!session) return;
+
   await new Promise((resolve, reject) => {
     session.destroy((err) => (err ? reject(err) : resolve()));
   });
 }
+
 module.exports = { register, login, logout, AuthError };
