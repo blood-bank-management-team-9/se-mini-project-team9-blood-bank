@@ -50,7 +50,6 @@ export default function DonorRegistrationForm({ onSuccess, onCancel }) {
     setIsSubmitting(true);
     setStatusMessage(null);
 
-    // Call live backend endpoint with standalone preview fallback
     try {
       const res = await fetch('/api/donors', {
         method: 'POST',
@@ -60,23 +59,41 @@ export default function DonorRegistrationForm({ onSuccess, onCancel }) {
 
       if (res.ok) {
         setStatusMessage({ type: 'success', text: 'Donor successfully registered into live database!' });
+        // Only redirect on SUCCESS!
+        timerRef.current = setTimeout(() => {
+          if (onSuccess) onSuccess();
+        }, 2000);
       } else {
         const data = await res.json().catch(() => ({}));
+        // SAD 4.4 error contract: { error: { code, message, fields[] } }
+        const errorObj = data.error || {};
+        const errorMsg = errorObj.message || `Registration rejected (HTTP ${res.status})`;
+
         setStatusMessage({
-          type: 'info',
-          text: `[Preview Mode] Client validation passed (TC-22, TC-36). Server response: ${data.message || res.statusText}`,
+          type: 'error',
+          text: errorMsg,
         });
+
+        // Map server fields[] to inline form errors
+        if (Array.isArray(errorObj.fields)) {
+          const serverFields = {};
+          errorObj.fields.forEach((f) => {
+            if (f.field && f.message) {
+              serverFields[f.field] = f.message;
+            }
+          });
+          setErrors((prev) => ({ ...prev, ...serverFields }));
+        }
+        // Do NOT redirect on failure!
       }
     } catch {
       setStatusMessage({
         type: 'info',
-        text: '[Preview Mode] Form validated successfully (TC-22, TC-36). Saved in local session preview.',
+        text: '[Preview Mode] Form validated successfully (TC-22, TC-36). (Backend API offline)',
       });
+      // Do NOT auto-redirect on API error
     } finally {
       setIsSubmitting(false);
-      timerRef.current = setTimeout(() => {
-        if (onSuccess) onSuccess();
-      }, 2500);
     }
   };
 
@@ -89,14 +106,13 @@ export default function DonorRegistrationForm({ onSuccess, onCancel }) {
         </p>
       </div>
 
-      {/* On-screen guidance as required by NFR-QUAL-01 / TC-36 (5-minute completion) */}
       <div className="form-guidance" role="region" aria-label="Staff Guidance">
         💡 <strong>Staff Guidance (5-min fast registration):</strong> Verify donor age (18–65) and weight (≥ 45 kg). Check that 90 days have elapsed since their last donation for male donors (120 days for female).
       </div>
 
       {statusMessage && (
         <div
-          className={`alert-banner ${statusMessage.type === 'success' ? 'info' : 'warning'}`}
+          className={`alert-banner ${statusMessage.type === 'success' ? 'info' : statusMessage.type === 'error' ? 'danger' : 'warning'}`}
           role="status"
           style={{ marginBottom: '1.25rem' }}
         >
@@ -187,7 +203,7 @@ export default function DonorRegistrationForm({ onSuccess, onCancel }) {
             </select>
           </div>
 
-          {/* Body Weight in kg with inline validation */}
+          {/* Body Weight in kg */}
           <div className="form-group">
             <label className="form-label" htmlFor="weightKg">
               Body Weight (kg) <span className="req">*</span>
@@ -211,7 +227,7 @@ export default function DonorRegistrationForm({ onSuccess, onCancel }) {
             )}
           </div>
 
-          {/* Phone Number with inline validation */}
+          {/* Phone Number */}
           <div className="form-group">
             <label className="form-label" htmlFor="phone">
               Phone Number (10 digits) <span className="req">*</span>
@@ -235,7 +251,7 @@ export default function DonorRegistrationForm({ onSuccess, onCancel }) {
             )}
           </div>
 
-          {/* Postal PIN Code with inline validation */}
+          {/* Postal PIN Code */}
           <div className="form-group">
             <label className="form-label" htmlFor="pinCode">
               Postal PIN Code (6 digits) <span className="req">*</span>
@@ -312,7 +328,7 @@ export default function DonorRegistrationForm({ onSuccess, onCancel }) {
             </button>
           )}
           <button type="submit" className="btn-primary" disabled={isSubmitting}>
-            {isSubmitting ? 'Validating...' : 'Register Donor & Verify Eligibility'}
+            {isSubmitting ? 'Submitting...' : 'Register Donor & Verify Eligibility'}
           </button>
         </div>
       </form>

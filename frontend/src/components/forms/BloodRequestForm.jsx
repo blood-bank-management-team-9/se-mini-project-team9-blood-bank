@@ -47,7 +47,6 @@ export default function BloodRequestForm({ onSuccess, onCancel }) {
     setIsSubmitting(true);
     setStatusMessage(null);
 
-    // Call live backend endpoint with standalone preview fallback
     try {
       const res = await fetch('/api/requests', {
         method: 'POST',
@@ -56,24 +55,43 @@ export default function BloodRequestForm({ onSuccess, onCancel }) {
       });
 
       if (res.ok) {
-        setStatusMessage({ type: 'success', text: 'Blood requisition submitted with status Pending.' });
+        setStatusMessage({ type: 'success', text: 'Blood requisition submitted successfully with status Pending.' });
+        // Only redirect on SUCCESS!
+        timerRef.current = setTimeout(() => {
+          if (onSuccess) onSuccess();
+        }, 2000);
       } else {
         const data = await res.json().catch(() => ({}));
+        // SAD 4.4 error contract: { error: { code, message, fields[] } }
+        const errorObj = data.error || {};
+        const errorMsg = errorObj.message || `Request rejected by server (HTTP ${res.status})`;
+
         setStatusMessage({
-          type: 'info',
-          text: `[Preview Mode] Client validation passed (TC-13). Server response: ${data.message || res.statusText}`,
+          type: 'error',
+          text: errorMsg,
         });
+
+        // Map server fields[] to inline form errors
+        if (Array.isArray(errorObj.fields)) {
+          const serverFields = {};
+          errorObj.fields.forEach((f) => {
+            if (f.field && f.message) {
+              serverFields[f.field] = f.message;
+            }
+          });
+          setErrors((prev) => ({ ...prev, ...serverFields }));
+        }
+        // Do NOT redirect on failure!
       }
     } catch {
+      // Offline / standalone preview mode notice
       setStatusMessage({
         type: 'info',
-        text: '[Preview Mode] Requisition validated successfully (TC-13). Saved in local session preview.',
+        text: '[Preview Mode] Requisition validated successfully (TC-13). (Backend API offline)',
       });
+      // Do NOT auto-redirect on API error
     } finally {
       setIsSubmitting(false);
-      timerRef.current = setTimeout(() => {
-        if (onSuccess) onSuccess();
-      }, 2500);
     }
   };
 
@@ -88,7 +106,7 @@ export default function BloodRequestForm({ onSuccess, onCancel }) {
 
       {statusMessage && (
         <div
-          className={`alert-banner ${statusMessage.type === 'success' ? 'info' : 'warning'}`}
+          className={`alert-banner ${statusMessage.type === 'success' ? 'info' : statusMessage.type === 'error' ? 'danger' : 'warning'}`}
           role="status"
           style={{ marginBottom: '1.25rem' }}
         >
@@ -257,7 +275,7 @@ export default function BloodRequestForm({ onSuccess, onCancel }) {
             </button>
           )}
           <button type="submit" className="btn-primary" disabled={isSubmitting}>
-            {isSubmitting ? 'Validating...' : 'Submit Requisition'}
+            {isSubmitting ? 'Submitting...' : 'Submit Requisition'}
           </button>
         </div>
       </form>

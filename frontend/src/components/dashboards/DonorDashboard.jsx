@@ -2,7 +2,7 @@ import React from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { calculateEligibility } from '../../utils/validation';
 
-export default function DonorDashboard() {
+export default function DonorDashboard({ initialDonations }) {
   const { user } = useAuth();
 
   // John Doe's last donation date from seeds was 2026-10-01
@@ -10,8 +10,8 @@ export default function DonorDashboard() {
   const lastDonationDate = user?.lastDonationDate || '2026-10-01';
   const eligibility = calculateEligibility(donorGender, lastDonationDate);
 
-  // Sample donation history
-  const history = [
+  // Sample donation history (or passed prop for testing)
+  const defaultHistory = [
     {
       id: 'DON-00000001',
       date: '2026-10-01',
@@ -21,6 +21,8 @@ export default function DonorDashboard() {
       screening: 'Passed',
     },
   ];
+
+  const history = initialDonations !== undefined ? initialDonations : defaultHistory;
 
   return (
     <div>
