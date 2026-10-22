@@ -77,6 +77,10 @@ body {
   color: var(--slate-900);
   font-weight: 700;
   font-size: 1.15rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
 }
 
 .brand-icon {

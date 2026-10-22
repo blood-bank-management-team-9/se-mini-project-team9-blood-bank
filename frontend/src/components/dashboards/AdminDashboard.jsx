@@ -1,6 +1,7 @@
 import React from 'react';
+import { getRoleBadgeClass } from '../../utils/navigation';
 
-export default function AdminDashboard() {
+export default function AdminDashboard({ onNavigate }) {
   const usersList = [
     { id: 'USR-ADM01', name: 'System Administrator', email: 'admin@bloodbank.org', role: 'Admin', status: 'Active' },
     { id: 'USR-STF01', name: 'Nurse Joy', email: 'staff@bloodbank.org', role: 'Staff', status: 'Active' },
@@ -35,12 +36,12 @@ export default function AdminDashboard() {
         <div className="stat-card">
           <span className="stat-label">System Audits</span>
           <span className="stat-value">28</span>
-          <span className="stat-desc">Append-only audit trail</span>
+          <span className="stat-desc">Append-only audit trail (C12)</span>
         </div>
         <div className="stat-card">
-          <span className="stat-label">System Health</span>
-          <span className="stat-value" style={{ color: 'var(--success)' }}>99.9%</span>
-          <span className="stat-desc">Uptime meets SLA (TC-37)</span>
+          <span className="stat-label">Availability SLA</span>
+          <span className="stat-value" style={{ color: 'var(--success)' }}>≥ 99%</span>
+          <span className="stat-desc">Target uptime per NFR-QUAL-02 (TC-37)</span>
         </div>
       </div>
 
@@ -67,7 +68,8 @@ export default function AdminDashboard() {
                   <td><strong>{u.name}</strong></td>
                   <td>{u.email}</td>
                   <td>
-                    <span className={`role-badge ${u.role.toLowerCase().replace('/', '')}`}>
+                    {/* Role badge class mismatch fixed using getRoleBadgeClass */}
+                    <span className={`role-badge ${getRoleBadgeClass(u.role)}`}>
                       {u.role}
                     </span>
                   </td>
@@ -85,6 +87,9 @@ export default function AdminDashboard() {
       <div className="panel">
         <div className="panel-header">
           <h2 className="panel-title">Recent System Audit Events (C12)</h2>
+          <button type="button" className="btn-secondary" onClick={() => onNavigate('audit')}>
+            View Full Audit Log
+          </button>
         </div>
         <div className="table-wrap">
           <table className="data-table">

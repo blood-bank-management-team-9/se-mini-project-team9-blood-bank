@@ -1,77 +1,31 @@
 import React from 'react';
 import { useAuth } from '../context/AuthContext';
+import { getNavigationItems, getRoleBadgeClass } from '../utils/navigation';
 
 export default function Navbar({ activeTab, onSelectTab }) {
   const { user, role, switchRole, logout, login } = useAuth();
-
-  // Navigation menu items strictly filtered by role as specified in SAD 4.5
-  const getRoleNavItems = () => {
-    switch (role) {
-      case 'Admin':
-        return [
-          { id: 'dashboard', label: 'Admin Dashboard' },
-          { id: 'users', label: 'User Accounts' },
-          { id: 'audit', label: 'System Audit Log' },
-          { id: 'config', label: 'System Settings' },
-        ];
-      case 'Staff':
-        return [
-          { id: 'dashboard', label: 'Staff Dashboard' },
-          { id: 'register-donor', label: 'Register Donor' },
-          { id: 'record-donation', label: 'Record Donation' },
-          { id: 'stock', label: 'Blood Inventory' },
-          { id: 'requests', label: 'Process Requests' },
-          { id: 'discard', label: 'Discard Unit' },
-        ];
-      case 'Donor':
-        return [
-          { id: 'dashboard', label: 'Donor Dashboard' },
-          { id: 'history', label: 'My Donation History' },
-          { id: 'eligibility', label: 'Check Eligibility' },
-        ];
-      case 'Hospital/Patient':
-        return [
-          { id: 'dashboard', label: 'Hospital Dashboard' },
-          { id: 'request-blood', label: 'New Blood Request' },
-          { id: 'track-requests', label: 'Track Requests' },
-        ];
-      default:
-        return [{ id: 'dashboard', label: 'Overview' }];
-    }
-  };
-
-  const navItems = getRoleNavItems();
-
-  const getRoleClass = (r) => {
-    switch (r) {
-      case 'Admin':
-        return 'admin';
-      case 'Staff':
-        return 'staff';
-      case 'Donor':
-        return 'donor';
-      case 'Hospital/Patient':
-        return 'hospital';
-      default:
-        return 'staff';
-    }
-  };
+  const navItems = getNavigationItems(role);
 
   return (
     <header className="app-header">
       <div className="header-inner">
-        <a href="#home" className="brand" onClick={(e) => { e.preventDefault(); onSelectTab('dashboard'); }}>
+        <button
+          type="button"
+          className="brand"
+          onClick={() => onSelectTab('dashboard')}
+          aria-label="Blood Bank Management System Home"
+        >
           <div className="brand-icon">🩸</div>
           <div className="brand-text">
             <span className="brand-title">BBMS Blood Bank</span>
             <span className="brand-sub">Management System</span>
           </div>
-        </a>
+        </button>
 
         <div className="header-controls">
-          {/* Role Switcher for seamless testing and demonstration */}
-          <div className="role-switcher-wrap" title="Switch active role for testing role dashboards">
-            <span>Role:</span>
+          {/* Dev-only role preview switcher (clearly labeled) */}
+          <div className="role-switcher-wrap" title="Dev Preview: switch roles to inspect SAD 4.5 role dashboards">
+            <span style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--slate-500)' }}>[DEV PREVIEW]:</span>
             <select
               className="role-select"
               value={role || 'Staff'}
@@ -79,7 +33,7 @@ export default function Navbar({ activeTab, onSelectTab }) {
                 switchRole(e.target.value);
                 onSelectTab('dashboard');
               }}
-              aria-label="Switch active role"
+              aria-label="Switch active preview role"
             >
               <option value="Staff">Staff</option>
               <option value="Admin">Admin</option>
@@ -93,9 +47,10 @@ export default function Navbar({ activeTab, onSelectTab }) {
             <>
               <div className="user-pill">
                 <span>{user.name}</span>
-                <span className={`role-badge ${getRoleClass(role)}`}>{role}</span>
+                <span className={`role-badge ${getRoleBadgeClass(role)}`}>{role}</span>
               </div>
               <button
+                type="button"
                 className="btn-logout"
                 onClick={() => {
                   logout();
@@ -106,26 +61,31 @@ export default function Navbar({ activeTab, onSelectTab }) {
               </button>
             </>
           ) : (
-            <button className="btn-primary" onClick={() => login('Staff')}>
+            <button type="button" className="btn-primary" onClick={() => login('Staff')}>
               Sign In
             </button>
           )}
         </div>
       </div>
 
-      {/* Nav Menu dynamically filtered by role (SAD 4.5) */}
+      {/* Nav Menu dynamically filtered by role as mandated by SAD 4.3 & 4.5 */}
       {user && (
         <nav className="role-nav" aria-label="Role Navigation">
           <div className="nav-inner">
-            {navItems.map((item) => (
-              <button
-                key={item.id}
-                className={`nav-item ${activeTab === item.id ? 'active' : ''}`}
-                onClick={() => onSelectTab(item.id)}
-              >
-                {item.label}
-              </button>
-            ))}
+            {navItems.map((item) => {
+              const isActive = activeTab === item.id;
+              return (
+                <button
+                  type="button"
+                  key={item.id}
+                  className={`nav-item ${isActive ? 'active' : ''}`}
+                  onClick={() => onSelectTab(item.id)}
+                  aria-current={isActive ? 'page' : undefined}
+                >
+                  {item.label}
+                </button>
+              );
+            })}
           </div>
         </nav>
       )}

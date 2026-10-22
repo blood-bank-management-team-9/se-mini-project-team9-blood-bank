@@ -1,12 +1,17 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { calculateEligibility } from '../../utils/validation';
 
 export default function DonorDashboard() {
   const { user } = useAuth();
-  const [showEmptyState, setShowEmptyState] = useState(false);
 
-  // Sample donation history for John Doe
-  const initialHistory = [
+  // John Doe's last donation date from seeds was 2026-10-01
+  const donorGender = user?.gender || 'Male';
+  const lastDonationDate = user?.lastDonationDate || '2026-10-01';
+  const eligibility = calculateEligibility(donorGender, lastDonationDate);
+
+  // Sample donation history
+  const history = [
     {
       id: 'DON-00000001',
       date: '2026-10-01',
@@ -16,8 +21,6 @@ export default function DonorDashboard() {
       screening: 'Passed',
     },
   ];
-
-  const history = showEmptyState ? [] : initialHistory;
 
   return (
     <div>
@@ -30,14 +33,25 @@ export default function DonorDashboard() {
         <div className="stat-card">
           <span className="stat-label">Blood Group</span>
           <span className="stat-value" style={{ color: 'var(--primary)' }}>O+</span>
-          <span className="stat-desc">Universal red cell donor</span>
+          {/* Correction: O+ is compatible with all Rh-positive groups (O- is universal red cell donor) */}
+          <span className="stat-desc">Compatible with O+, A+, B+, AB+</span>
         </div>
         <div className="stat-card">
           <span className="stat-label">Eligibility Status</span>
-          <span className="stat-value" style={{ color: 'var(--success)', fontSize: '1.4rem' }}>
-            Eligible
+          <span
+            className="stat-value"
+            style={{
+              color: eligibility.eligible ? 'var(--success)' : 'var(--danger)',
+              fontSize: '1.25rem',
+            }}
+          >
+            {eligibility.eligible ? 'Eligible' : 'Ineligible'}
           </span>
-          <span className="stat-desc">Next donation window is open</span>
+          <span className="stat-desc">
+            {eligibility.eligible
+              ? 'Ready for voluntary donation'
+              : `${eligibility.daysRemaining} days remaining for 90-day gap`}
+          </span>
         </div>
         <div className="stat-card">
           <span className="stat-label">Total Donations</span>
@@ -45,40 +59,37 @@ export default function DonorDashboard() {
           <span className="stat-desc">Lifetime units contributed</span>
         </div>
         <div className="stat-card">
-          <span className="stat-label">Lives Impacted</span>
-          <span className="stat-value">{history.length * 3}</span>
-          <span className="stat-desc">Estimated patient support</span>
+          <span className="stat-label">Last Donated</span>
+          <span className="stat-value" style={{ fontSize: '1.2rem' }}>{lastDonationDate}</span>
+          <span className="stat-desc">Next eligible: {eligibility.nextDate || 'Available today'}</span>
         </div>
       </div>
 
-      {/* Eligibility Guidelines Box */}
-      <div className="alert-banner info" style={{ marginBottom: '1.5rem' }}>
-        <span className="alert-badge-label">DONATION GUIDELINES</span>
+      {/* Eligibility Guidelines Box with dynamic message */}
+      <div
+        className={`alert-banner ${eligibility.eligible ? 'info' : 'warning'}`}
+        style={{ marginBottom: '1.5rem' }}
+        role="region"
+        aria-label="Eligibility Notice"
+      >
+        <span className="alert-badge-label">ELIGIBILITY NOTICE (BR-03)</span>
         <span>
-          Male donors can donate every 90 days; female donors every 120 days. Ensure you weigh at least 45 kg and are well hydrated.
+          <strong>Status: </strong> {eligibility.message}. Voluntary donation requires a mandatory 90-day rest period for male donors (120 days for female).
         </span>
       </div>
 
       {/* Donation History Table */}
       <div className="panel">
         <div className="panel-header">
-          <h2 className="panel-title">My Donation History</h2>
-          <button
-            className="btn-secondary"
-            style={{ fontSize: '0.8rem', padding: '0.25rem 0.6rem' }}
-            onClick={() => setShowEmptyState(!showEmptyState)}
-            title="Toggle between sample history and empty state"
-          >
-            {showEmptyState ? 'Show Sample History' : 'Simulate Empty History'}
-          </button>
+          <h2 className="panel-title">My Donation History (TC-24)</h2>
         </div>
 
         {history.length === 0 ? (
-          /* Explicit SAD 4.5 requirement: shows "No donations recorded yet" when empty */
+          /* Mandatory SAD 4.5 requirement: shows "No donations recorded yet" when empty */
           <div className="empty-state">
             <p><strong>No donations recorded yet</strong></p>
             <p style={{ fontSize: '0.85rem', marginTop: '0.25rem' }}>
-              Your future donations at any certified camp or center will show up here.
+              Your future donations at any certified camp or center will appear here.
             </p>
           </div>
         ) : (

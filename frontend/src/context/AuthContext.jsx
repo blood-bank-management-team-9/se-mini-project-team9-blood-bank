@@ -1,7 +1,8 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 
 const AuthContext = createContext();
 
+// Seed user accounts aligned with ADR-04 and SAD 3.6
 export const DEFAULT_USERS = {
   Staff: {
     id: 'USR-STF01',
@@ -24,6 +25,8 @@ export const DEFAULT_USERS = {
     role: 'Donor',
     phone: '9876543212',
     bloodGroup: 'O+',
+    lastDonationDate: '2026-10-01',
+    gender: 'Male',
   },
   'Hospital/Patient': {
     id: 'USR-HSP01',
@@ -34,40 +37,60 @@ export const DEFAULT_USERS = {
   },
 };
 
+// 15-minute idle timeout in milliseconds per ADR-04 (15 * 60 * 1000)
+const IDLE_TIMEOUT_MS = 15 * 60 * 1000;
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => {
-    const saved = localStorage.getItem('bbms_user');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch {
-        return DEFAULT_USERS.Staff;
-      }
-    }
+    // In dev / preview mode, default to Staff; can be switched via preview role selector
     return DEFAULT_USERS.Staff;
   });
 
-  useEffect(() => {
-    if (user) {
-      localStorage.setItem('bbms_user', JSON.stringify(user));
-    } else {
-      localStorage.removeItem('bbms_user');
-    }
-  }, [user]);
+  const lastActivityRef = useRef(Date.now());
+  const idleTimerRef = useRef(null);
 
-  const switchRole = (newRole) => {
+  const logout = useCallback(() => {
+    setUser(null);
+  }, []);
+
+  const login = useCallback((role = 'Staff') => {
+    setUser(DEFAULT_USERS[role] || DEFAULT_USERS.Staff);
+    lastActivityRef.current = Date.now();
+  }, []);
+
+  const switchRole = useCallback((newRole) => {
     if (DEFAULT_USERS[newRole]) {
       setUser(DEFAULT_USERS[newRole]);
+      lastActivityRef.current = Date.now();
     }
-  };
+  }, []);
 
-  const logout = () => {
-    setUser(null);
-  };
+  // Enforce ADR-04: 15-minute idle expiry
+  useEffect(() => {
+    const handleActivity = () => {
+      lastActivityRef.current = Date.now();
+    };
 
-  const login = (role = 'Staff') => {
-    setUser(DEFAULT_USERS[role] || DEFAULT_USERS.Staff);
-  };
+    window.addEventListener('mousemove', handleActivity);
+    window.addEventListener('keydown', handleActivity);
+    window.addEventListener('click', handleActivity);
+    window.addEventListener('scroll', handleActivity);
+
+    idleTimerRef.current = setInterval(() => {
+      if (user && Date.now() - lastActivityRef.current > IDLE_TIMEOUT_MS) {
+        console.warn('Session expired due to 15 minutes of inactivity (ADR-04).');
+        logout();
+      }
+    }, 30000); // Check every 30 seconds
+
+    return () => {
+      window.removeEventListener('mousemove', handleActivity);
+      window.removeEventListener('keydown', handleActivity);
+      window.removeEventListener('click', handleActivity);
+      window.removeEventListener('scroll', handleActivity);
+      if (idleTimerRef.current) clearInterval(idleTimerRef.current);
+    };
+  }, [user, logout]);
 
   return (
     <AuthContext.Provider value={{ user, role: user?.role, switchRole, logout, login }}>

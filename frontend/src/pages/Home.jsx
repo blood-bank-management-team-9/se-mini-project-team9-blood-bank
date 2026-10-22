@@ -7,6 +7,7 @@ import DonorDashboard from '../components/dashboards/DonorDashboard';
 import HospitalDashboard from '../components/dashboards/HospitalDashboard';
 import DonorRegistrationForm from '../components/forms/DonorRegistrationForm';
 import BloodRequestForm from '../components/forms/BloodRequestForm';
+import { getNavigationItems } from '../utils/navigation';
 import { getHealth } from '../services/api';
 
 export default function Home() {
@@ -17,30 +18,33 @@ export default function Home() {
   useEffect(() => {
     getHealth()
       .then((data) => setHealthStatus(`Online (${data.status || 'healthy'})`))
-      .catch(() => setHealthStatus('API Service Unreachable'));
+      .catch(() => setHealthStatus('Offline / Standalone Preview'));
   }, []);
 
-  // Reset tab to dashboard if active tab is not valid for current role
+  // Guard: if current active tab is not accessible by the new role, reset to dashboard
   useEffect(() => {
-    setActiveTab('dashboard');
-  }, [role]);
+    const allowed = getNavigationItems(role).map((i) => i.id);
+    if (!allowed.includes(activeTab)) {
+      setActiveTab('dashboard');
+    }
+  }, [role, activeTab]);
 
   const renderContent = () => {
     if (!user) {
       return (
         <div style={{ textAlign: 'center', padding: '4rem 1rem' }}>
           <h1 style={{ fontSize: '2rem', marginBottom: '1rem', color: 'var(--slate-900)' }}>
-            Welcome to Blood Bank Management System
+            Blood Bank Management System
           </h1>
-          <p style={{ color: 'var(--slate-600)', marginBottom: '1.5rem', maxWidth: '600px', margin: '0 auto 1.5rem auto' }}>
-            A mission-critical transfusion inventory and voluntary donor management platform.
-            Please sign in using your authorized role.
+          <p style={{ color: 'var(--slate-600)', maxWidth: '600px', margin: '0 auto 1.5rem auto' }}>
+            Mission-critical blood inventory and donor management platform.
+            Please sign in using your authorized account.
           </p>
         </div>
       );
     }
 
-    // Interactive Forms
+    // Forms
     if (activeTab === 'register-donor') {
       return (
         <DonorRegistrationForm
@@ -59,19 +63,37 @@ export default function Home() {
       );
     }
 
-    // Role-specific Dashboards (SAD 4.5)
-    switch (role) {
-      case 'Admin':
-        return <AdminDashboard onNavigate={setActiveTab} />;
-      case 'Staff':
-        return <StaffDashboard onNavigate={setActiveTab} />;
-      case 'Donor':
-        return <DonorDashboard onNavigate={setActiveTab} />;
-      case 'Hospital/Patient':
-        return <HospitalDashboard onNavigate={setActiveTab} />;
-      default:
-        return <StaffDashboard onNavigate={setActiveTab} />;
+    // Role Dashboards (SAD 4.5)
+    if (activeTab === 'dashboard') {
+      switch (role) {
+        case 'Admin':
+          return <AdminDashboard onNavigate={setActiveTab} />;
+        case 'Staff':
+          return <StaffDashboard onNavigate={setActiveTab} />;
+        case 'Donor':
+          return <DonorDashboard onNavigate={setActiveTab} />;
+        case 'Hospital/Patient':
+          return <HospitalDashboard onNavigate={setActiveTab} />;
+        default:
+          return <StaffDashboard onNavigate={setActiveTab} />;
+      }
     }
+
+    // Specific Views or Stubbed Modules for Sprint 2
+    const currentItem = getNavigationItems(role).find((i) => i.id === activeTab);
+    return (
+      <div className="panel" style={{ textAlign: 'center', padding: '3rem 1.5rem' }}>
+        <h2 className="panel-title" style={{ fontSize: '1.5rem', marginBottom: '0.75rem' }}>
+          {currentItem ? currentItem.label : 'Module Overview'}
+        </h2>
+        <p style={{ color: 'var(--slate-600)', maxWidth: '540px', margin: '0 auto 1.5rem auto' }}>
+          This module is assigned under <strong>Sprint 2</strong> (scheduled for October 24–30 as per the team backlog). The interface shell and navigation routing are fully mapped.
+        </p>
+        <button type="button" className="btn-primary" onClick={() => setActiveTab('dashboard')}>
+          ← Return to Dashboard
+        </button>
+      </div>
+    );
   };
 
   return (
@@ -96,8 +118,8 @@ export default function Home() {
         flexWrap: 'wrap',
         gap: '0.5rem'
       }}>
-        <span>© 2026 Blood Bank Management System (Team 9). Compliant with SAD 4.5 & SRS 3.1.</span>
-        <span>Backend Status: <strong style={{ color: healthStatus.includes('Online') ? 'var(--success)' : 'var(--danger)' }}>{healthStatus}</strong></span>
+        <span>BBMS Blood Bank Management System — Team 9</span>
+        <span>API Status: <strong style={{ color: healthStatus.includes('Online') ? 'var(--success)' : 'var(--slate-600)' }}>{healthStatus}</strong></span>
       </footer>
     </div>
   );
