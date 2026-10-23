@@ -9,8 +9,8 @@ A web application for managing blood donors, donations, blood stock and blood re
 Software Engineering (UE24CS341A) mini-project, Section C, PES University, Bangalore.
 
 > **Status: work in progress.**
-> The middleware layer, registration, login, logout, donor profile management, admin user management and audit retention are implemented.
-> Password reset, donor eligibility, donation, stock, request and report modules are being built on their own branches.
+> The middleware layer, registration, login, logout, donor profile management and eligibility, admin user management and audit retention are implemented.
+> Password reset, donation, stock, request and report modules are being built on their own branches.
 > See [Project status](#project-status).
 
 ---
@@ -71,6 +71,8 @@ Requirements are traced to the SRS, SAD and Test Plan (see [Documentation](#docu
 | Admin user management: create Staff, list/filter, activate/deactivate, change role, last-admin protection | FR-ADM-01 to FR-ADM-06 | #7 `feature/admin-users` |
 | Audit log viewer (admin only) | FR-ADM-05 | #7 |
 | Audit retention job (365 days, daily at 02:00) | NFR-SEC-06 | #8 `feature/audit-retention` |
+| Donor profile management | FR-DON-01 to FR-DON-03, FR-DON-07 | #9 |
+| Donor eligibility engine with config-driven ineligibility reasons | FR-DON-04, FR-DON-05, BR-03 | #10 |
 
 Key files live under `backend/src/middleware/`, `backend/src/database/transaction.js`, `backend/src/modules/audit/`, `backend/src/modules/auth/` and `backend/src/modules/admin/`.
 
@@ -81,7 +83,7 @@ Owned by other stories. Do not assume they exist.
 | Module | Requirements |
 |---|---|
 | Password reset | FR-AUTH-05 |
-| Donor management and eligibility engine | FR-DON-01 to FR-DON-08 |
+| Donor donation history and donation workflows | Remaining FR-DON requirements; FR-DNR-01 to FR-DNR-06 |
 | Blood donation recording | FR-DNR-01 to FR-DNR-06 |
 | Blood stock management and expiry job | FR-STK-01 to FR-STK-07 |
 | Blood request handling with FEFO | FR-REQ-01 to FR-REQ-08 |
@@ -292,6 +294,7 @@ Base URL: `http://localhost:5000`. Details and conventions are in [`backend/READ
 | `POST` | `/api/donors` | Staff, Admin | Register and validate a donor (FR-DON-01, FR-DON-02) |
 | `GET` | `/api/donors?status=&bloodGroup=&q=` | Staff, Admin | List and filter donor profiles |
 | `GET` | `/api/donors/{id}` | Staff, Admin | Read a donor profile |
+| `GET` | `/api/donors/{id}/eligibility` | Staff, Admin | Evaluate donor eligibility and return ineligibility reasons (FR-DON-04, FR-DON-05, BR-03) |
 | `PUT` | `/api/donors/{id}` | Staff, Admin | Update a donor profile (FR-DON-03) |
 | `PATCH` | `/api/donors/{id}/status` | Staff, Admin | Deactivate or reactivate a donor (FR-DON-07) |
 | `POST` | `/api/admin/users` | Admin | Create a Staff account (FR-ADM-01) |

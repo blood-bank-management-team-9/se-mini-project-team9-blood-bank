@@ -11,6 +11,7 @@ jest.mock('./donors.repository', () => ({
   createDonor: jest.fn(),
   updateDonor: jest.fn(),
   updateDonorStatus: jest.fn(),
+  getEligibilityConfig: jest.fn(),
 }));
 
 const repo = require('./donors.repository');
@@ -94,6 +95,41 @@ describe('Donor service', () => {
       status: 404,
     });
     expect(repo.updateDonor).not.toHaveBeenCalled();
+  });
+
+  it('evaluates donor eligibility using the configured rules', async () => {
+    repo.findDonorById.mockResolvedValue(donorRow({
+      date_of_birth: '2010-04-12',
+      weight_kg: '40.00',
+      last_donation_date: '2026-10-01',
+    }));
+    repo.getEligibilityConfig.mockResolvedValue({
+      eligibility_min_age: '18',
+      eligibility_max_age: '65',
+      eligibility_min_weight_kg: '45',
+      eligibility_gap_days_male: '90',
+      eligibility_gap_days_other: '120',
+    });
+
+    const eligibility = await donorService.getDonorEligibility('DNR-00006');
+
+    expect(eligibility.eligible).toBe(false);
+    expect(eligibility.ineligibilityReasons.map(({ code }) => code)).toEqual([
+      'AGE_BELOW_MINIMUM',
+      'WEIGHT_BELOW_MINIMUM',
+      'DONATION_GAP_NOT_MET',
+    ]);
+    expect(repo.getEligibilityConfig).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns NOT_FOUND before loading eligibility configuration for an unknown donor', async () => {
+    repo.findDonorById.mockResolvedValue(null);
+
+    await expect(donorService.getDonorEligibility('DNR-99999')).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+      status: 404,
+    });
+    expect(repo.getEligibilityConfig).not.toHaveBeenCalled();
   });
 
   it('audits deactivation and reactivation as distinct state changes', async () => {
