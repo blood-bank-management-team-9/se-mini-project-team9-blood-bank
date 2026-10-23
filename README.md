@@ -9,8 +9,8 @@ A web application for managing blood donors, donations, blood stock and blood re
 Software Engineering (UE24CS341A) mini-project, Section C, PES University, Bangalore.
 
 > **Status: work in progress.**
-> The middleware layer, registration, login, logout, admin user management and audit retention are implemented and verified.
-> Password reset and the donor, donation, stock, request and report modules are being built on their own branches.
+> The middleware layer, registration, login, logout, donor profile management, admin user management and audit retention are implemented.
+> Password reset, donor eligibility, donation, stock, request and report modules are being built on their own branches.
 > See [Project status](#project-status).
 
 ---
@@ -289,6 +289,11 @@ Base URL: `http://localhost:5000`. Details and conventions are in [`backend/READ
 | `POST` | `/api/auth/register` | none | Register as Donor or Hospital/Patient (FR-AUTH-01, FR-AUTH-02, NFR-SEC-01) |
 | `POST` | `/api/auth/login` | none | Authenticate by email + password. Returns session cookie on success (FR-AUTH-03, FR-AUTH-04) |
 | `POST` | `/api/auth/logout` | session | Ends the current session and clears the cookie (FR-AUTH-07) |
+| `POST` | `/api/donors` | Staff, Admin | Register and validate a donor (FR-DON-01, FR-DON-02) |
+| `GET` | `/api/donors?status=&bloodGroup=&q=` | Staff, Admin | List and filter donor profiles |
+| `GET` | `/api/donors/{id}` | Staff, Admin | Read a donor profile |
+| `PUT` | `/api/donors/{id}` | Staff, Admin | Update a donor profile (FR-DON-03) |
+| `PATCH` | `/api/donors/{id}/status` | Staff, Admin | Deactivate or reactivate a donor (FR-DON-07) |
 | `POST` | `/api/admin/users` | Admin | Create a Staff account (FR-ADM-01) |
 | `GET` | `/api/admin/users?role=&status=&q=` | Admin | List and filter users (FR-ADM-02) |
 | `PATCH` | `/api/admin/users/{id}/status` | Admin | Activate/deactivate user; blocks last-admin deactivation (FR-ADM-03, FR-ADM-06) |
