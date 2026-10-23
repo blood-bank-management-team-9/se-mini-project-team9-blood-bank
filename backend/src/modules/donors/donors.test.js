@@ -100,6 +100,33 @@ describeIfDb('Donor routes (TC-22, TC-36)', () => {
     expect(rows).toHaveLength(1);
   });
 
+  it('TC-23: returns configured ineligibility reasons for a donor profile', async () => {
+    const donorDetails = validDonor();
+    const created = await staff.post('/api/donors').send(donorDetails);
+    expect(created.status).toBe(201);
+    createdDonorIds.push(created.body.donorId);
+
+    const updated = await staff.put(`/api/donors/${created.body.donorId}`).send({
+      ...donorDetails,
+      dob: '2010-04-12',
+      weightKg: 40,
+    });
+    expect(updated.status).toBe(200);
+
+    const response = await staff.get(`/api/donors/${created.body.donorId}/eligibility`);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      donorId: created.body.donorId,
+      eligible: false,
+      ineligibilityReasons: expect.arrayContaining([
+        expect.objectContaining({ code: 'AGE_BELOW_MINIMUM' }),
+        expect.objectContaining({ code: 'WEIGHT_BELOW_MINIMUM' }),
+      ]),
+    });
+    expect(response.body.ineligibilityReasons.every(({ message }) => Boolean(message))).toBe(true);
+  });
+
   it('TC-36: rejects invalid donor fields and reports field-level errors', async () => {
     const response = await staff.post('/api/donors').send({
       ...validDonor(),

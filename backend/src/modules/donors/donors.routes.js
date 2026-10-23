@@ -23,20 +23,15 @@ function donorFields() {
       .custom((value) => {
         const birthDate = new Date(`${value}T00:00:00Z`);
         const now = new Date();
-        let age = now.getUTCFullYear() - birthDate.getUTCFullYear();
-        const monthDiff = now.getUTCMonth() - birthDate.getUTCMonth();
-        if (monthDiff < 0 || (monthDiff === 0 && now.getUTCDate() < birthDate.getUTCDate())) {
-          age--;
-        }
-        if (birthDate > now || age < 18 || age > 65) {
-          throw new Error('Donor must be between 18 and 65 years old');
+        if (birthDate > now) {
+          throw new Error('Date of birth cannot be in the future');
         }
         return true;
       }),
     body('gender').isIn(VALID_GENDERS).withMessage('Gender must be Male, Female or Other'),
     body('bloodGroup').isIn(VALID_BLOOD_GROUPS).withMessage('Invalid blood group'),
     body('weightKg')
-      .isFloat({ min: 45 }).withMessage('Weight must be at least 45 kg')
+      .isFloat({ min: 0.01 }).withMessage('Weight must be greater than 0 kg')
       .toFloat(),
     body('phone')
       .matches(/^\d{10}$/).withMessage('Phone number must be exactly 10 digits'),
@@ -113,6 +108,20 @@ router.post(
         donor: req.body,
       });
       return res.status(201).json(donor);
+    } catch (err) {
+      return handleDonorError(err, req, res, next);
+    }
+  }
+);
+
+router.get(
+  '/:id/eligibility',
+  requireRole(...DONOR_ROLES),
+  validate([donorIdParam]),
+  async (req, res, next) => {
+    try {
+      const eligibility = await donorService.getDonorEligibility(req.params.id);
+      return res.status(200).json(eligibility);
     } catch (err) {
       return handleDonorError(err, req, res, next);
     }

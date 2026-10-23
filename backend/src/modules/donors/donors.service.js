@@ -2,6 +2,7 @@
 const { withTransaction } = require('../../database/transaction');
 const { logAudit } = require('../audit/audit.repository');
 const repo = require('./donors.repository');
+const { evaluateEligibility } = require('./donorEligibility');
 
 const VALID_STATUSES = ['Active', 'Inactive'];
 
@@ -50,6 +51,13 @@ async function getDonor(donorId) {
   const row = await repo.findDonorById(donorId);
   if (!row) throw new DonorError('NOT_FOUND', 'Donor not found', 404);
   return toDonorDto(row);
+}
+
+async function getDonorEligibility(donorId) {
+  const donor = await repo.findDonorById(donorId);
+  if (!donor) throw new DonorError('NOT_FOUND', 'Donor not found', 404);
+  const config = await repo.getEligibilityConfig();
+  return evaluateEligibility(donor, config);
 }
 
 async function createDonor({ actorUserId, donor }) {
@@ -119,6 +127,7 @@ async function setDonorStatus({ actorUserId, donorId, status }) {
 module.exports = {
   listDonors,
   getDonor,
+  getDonorEligibility,
   createDonor,
   updateDonor,
   setDonorStatus,

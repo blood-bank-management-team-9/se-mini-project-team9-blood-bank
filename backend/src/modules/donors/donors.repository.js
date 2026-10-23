@@ -3,6 +3,13 @@ const { query } = require('../../database/db');
 
 const DONOR_COLUMNS = `donor_id, full_name, date_of_birth, gender, blood_group,
   weight_kg, phone, email, address, city, pin_code, last_donation_date, status, created_at`;
+const ELIGIBILITY_CONFIG_KEYS = [
+  'eligibility_min_age',
+  'eligibility_max_age',
+  'eligibility_min_weight_kg',
+  'eligibility_gap_days_male',
+  'eligibility_gap_days_other',
+];
 
 function runner(tx) {
   return tx ? tx.query.bind(tx) : query;
@@ -116,6 +123,14 @@ async function updateDonorStatus(tx, donorId, status) {
   return rows[0] || null;
 }
 
+async function getEligibilityConfig() {
+  const { rows } = await query(
+    'SELECT key, value FROM system_config WHERE key = ANY($1)',
+    [ELIGIBILITY_CONFIG_KEYS]
+  );
+  return Object.fromEntries(rows.map(({ key, value }) => [key, value]));
+}
+
 module.exports = {
   listDonors,
   findDonorById,
@@ -123,4 +138,5 @@ module.exports = {
   createDonor,
   updateDonor,
   updateDonorStatus,
+  getEligibilityConfig,
 };
