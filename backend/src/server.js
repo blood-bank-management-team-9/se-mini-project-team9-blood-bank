@@ -1,7 +1,8 @@
 const cron = require('node-cron');
 const app = require('./app');
-const { port } = require('./config');
+const { port, env } = require('./config');
 const { runRetention } = require('./modules/audit/audit.retention');
+const scheduler = require('./scheduler');
 
 app
   .listen(port, () => console.log(`API listening on port ${port}`))
@@ -23,4 +24,9 @@ if (process.env.NODE_ENV !== 'test') {
     });
   });
   console.log('[audit-retention] scheduled daily at 02:00');
+}
+
+// FR-STK-03 (midnight expiry job) and NFR-SAF-03 (nightly backup), SAD C15.
+if (env !== 'test') {
+  scheduler.start();
 }
