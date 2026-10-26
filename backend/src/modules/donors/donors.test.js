@@ -130,10 +130,10 @@ describeIfDb('Donor routes (TC-22, TC-36)', () => {
   it('TC-36: rejects invalid donor fields and reports field-level errors', async () => {
     const response = await staff.post('/api/donors').send({
       ...validDonor(),
-      dob: '2015-04-12',
-      bloodGroup: 'X+',
-      phone: '123',
-      weightKg: 40,
+      dob: '2099-01-01',        // future date -> triggers 'Date of birth cannot be in the future'
+      bloodGroup: 'X+',         // invalid enum -> triggers 'Invalid blood group'
+      phone: '123',             // not 10 digits -> triggers 'Phone number must be exactly 10 digits'
+      weightKg: 0,              // below min 0.01 -> triggers 'Weight must be greater than 0 kg'
     });
     expect(response.status).toBe(400);
     expect(response.body.error.code).toBe('VALIDATION_ERROR');
