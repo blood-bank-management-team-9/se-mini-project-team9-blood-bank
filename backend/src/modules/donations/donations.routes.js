@@ -1,11 +1,13 @@
-// C8 Donation API (SAD 4.3 PUT /api/donations/{id}, FR-DNR-06). Staff only (BR-01).
+// C8 Donation API (SAD 4.3 /api/donations, FR-DNR-01 to 06). Staff only (BR-01).
 const router = require('express').Router();
 const { body, param } = require('express-validator');
 const { requireRole } = require('../../middleware/rbac');
 const { validate } = require('../../middleware/validate');
 const donationService = require('./donations.service');
+const recordService = require('./donations.record.service');
 
 const DONATION_ROLES = ['Staff'];
+const ALLOWED_RECORD_FIELDS = ['donorId', 'collectionDate', 'volumeMl', 'screeningStatus', 'medicalNotes'];
 const ALLOWED_CORRECTION_FIELDS = ['volumeMl', 'collectionDate', 'medicalNotes'];
 
 function handleDonationError(err, req, res, next) {
@@ -21,6 +23,58 @@ function handleDonationError(err, req, res, next) {
   }
   return next(err);
 }
+
+const collectionDateRule = body('collectionDate')
+  .matches(/^\d{4}-\d{2}-\d{2}$/).bail()
+  .isISO8601({ strict: true })
+  .withMessage('Collection date must be a valid YYYY-MM-DD date');
+
+const volumeRule = body('volumeMl')
+  .custom((v) => donationService.VOLUMES_ML.includes(v))
+  .withMessage('Volume must be 350 or 450 ml');
+
+router.post(
+  '/',
+  requireRole(...DONATION_ROLES),
+  validate([
+    body().custom((value) => {
+      if (typeof value === 'object' && value !== null) {
+        const unknown = Object.keys(value).filter((k) => !ALLOWED_RECORD_FIELDS.includes(k));
+        if (unknown.length > 0) {
+          throw new Error(`Unknown field(s): ${unknown.join(', ')}`);
+        }
+      }
+      return true;
+    }),
+    body('donorId').matches(/^DNR-\d{5}$/).withMessage('Donor ID must use the DNR-00000 format'),
+    collectionDateRule,
+    volumeRule,
+    body('screeningStatus').isIn(['Passed', 'Failed'])
+      .withMessage('Screening status must be Passed or Failed'),
+    body('medicalNotes').optional({ nullable: true })
+      .isString().bail()
+      .trim()
+      .isLength({ max: donationService.NOTES_MAX_LENGTH })
+      .withMessage('Medical notes must be at most 200 characters'),
+  ]),
+  async (req, res, next) => {
+    try {
+      const result = await recordService.recordDonation({
+        actorUserId: req.session.user.userId,
+        input: {
+          donorId: req.body.donorId,
+          collectionDate: req.body.collectionDate,
+          volumeMl: req.body.volumeMl,
+          screeningStatus: req.body.screeningStatus,
+          medicalNotes: req.body.medicalNotes,
+        },
+      });
+      return res.status(201).json(result);
+    } catch (err) {
+      return handleDonationError(err, req, res, next);
+    }
+  }
+);
 
 router.put(
   '/:donationId',

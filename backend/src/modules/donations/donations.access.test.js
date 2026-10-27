@@ -11,11 +11,17 @@ jest.mock('./donations.service', () => {
     correctDonation: jest.fn(),
   };
 });
+jest.mock('./donations.record.service', () => ({
+  recordDonation: jest.fn(),
+}));
 
 const donationsRouter = require('./donations.routes');
 
 // Real RBAC middleware: SRS BR-01, only Staff may record or correct donations.
-const endpoints = [['put', '/api/donations/DON-00000001']];
+const endpoints = [
+  ['put', '/api/donations/DON-00000001'],
+  ['post', '/api/donations'],
+];
 
 function buildApp(user) {
   const app = express();
