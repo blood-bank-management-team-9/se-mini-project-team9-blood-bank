@@ -54,3 +54,28 @@ This document logs all architectural and technical implementation deviations fro
 - **Baseline Specification:** SAD 3.6 & 3.9 specifies Nginx terminating TLS 1.2+ and redirecting HTTP to HTTPS.
 - **Implemented Solution:** Provided production Nginx virtual host template in `docs/nginx/bbms.conf` with modern Mozilla intermediate cipher suite, HSTS preload, gzip compression, and secure proxy pass.
 - **Rationale:** Clear deployment instructions and operational readiness for deployment teams.
+
+---
+
+### DEV-07: CSV Formula Injection (DDE) Sanitization
+- **Baseline Specification:** SAD 3.6 & 4.3 mentions standard CSV export.
+- **Implemented Solution:** Automatically prefixes cells starting with formula trigger characters (`=`, `+`, `-`, `@`, `\t`, `\r`) with a single quote (`'`) in `backend/src/modules/reports/reports.exporter.js`.
+- **Rationale:** Mitigates CSV Injection (CWE-1236) where exported blood stock, donor, or request data could execute arbitrary commands when opened in Microsoft Excel or LibreOffice Calc.
+- **Verification:** Verified by unit tests in `reports.test.js`.
+
+---
+
+### DEV-08: Health Check Connection Leak Prevention & Degraded Reporting
+- **Baseline Specification:** SAD 4.4 mentions `/api/health` monitoring.
+- **Implemented Solution:** Uses `pool.query('SELECT 1')` with automatic client release in `backend/src/modules/health/health.controller.js`, returning HTTP 200 when connected and HTTP 503 when degraded. Eliminated test-only bypass logic in production code.
+- **Rationale:** Prevents connection pool starvation caused by unreleased clients when the database is intermittent or flapping. Ensures CI and production environments truthfully report service availability.
+- **Verification:** Unit tests in `health.test.js` and `nfr.test.js` validating both healthy and degraded responses.
+
+---
+
+### DEV-09: Recursive Redaction Cycle Guard & Regional Phone Pattern Normalization
+- **Baseline Specification:** SAD 4.4 & NFR-SEC-07 specified log redaction of sensitive credentials.
+- **Implemented Solution:** Enhanced `backend/src/middleware/redaction.js` with `WeakSet` circular reference detection, Date object preservation, expanded sensitive keys (`phone_number`, `pin_code`, `authorization`, `cookie`), and Indian mobile regex patterns (`+91...`, dashes, spaces). Integrated directly into `backend/src/modules/audit/audit.repository.js`.
+- **Rationale:** Prevents stack overflows during serialization of complex or cyclic error payloads, and ensures personal contact information and authentication tokens never persist in application audit logs or error logs.
+- **Verification:** Verified by console spy tests in `nfr.test.js`.
+
