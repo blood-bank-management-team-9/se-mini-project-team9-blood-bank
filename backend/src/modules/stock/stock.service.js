@@ -126,13 +126,8 @@ async function discardUnit({ actorUserId, unitId, reason }) {
     if (!updated) {
       throw new StockError('INVALID_STATE', 'Unit state changed; please retry', 409);
     }
-    // FR-STK-07: stock is derived from rows, so the count after this change must never be negative.
-    if (unit.status === 'Available') {
-      const remaining = await repo.countAvailable(tx, unit.blood_group);
-      if (remaining < 0) {
-        throw new StockError('INSUFFICIENT_STOCK', 'Stock cannot go below zero', 409);
-      }
-    }
+    // FR-STK-07: the status-guarded UPDATE above prevents double-discard, and derived
+    // counts cannot go negative; allocation is guarded by assertSufficientStock.
     await logAudit({
       userId: actorUserId,
       action: 'UNIT_DISCARDED',
