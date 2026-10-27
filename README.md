@@ -73,6 +73,7 @@ Requirements are traced to the SRS, SAD and Test Plan (see [Documentation](#docu
 | Audit retention job (365 days, daily at 02:00) | NFR-SEC-06 | #8 `feature/audit-retention` |
 | Donor profile management | FR-DON-01 to FR-DON-03, FR-DON-07 | #9 |
 | Donor eligibility engine with config-driven ineligibility reasons | FR-DON-04, FR-DON-05, BR-03 | #10 |
+| Stock summary by group/status, expiry date, low-stock and expiring-soon alerts | FR-STK-01, FR-STK-02, FR-STK-04, FR-STK-05 | #12 |
 
 Key files live under `backend/src/middleware/`, `backend/src/database/transaction.js`, `backend/src/modules/audit/`, `backend/src/modules/auth/` and `backend/src/modules/admin/`.
 
@@ -85,7 +86,7 @@ Owned by other stories. Do not assume they exist.
 | Password reset | FR-AUTH-05 |
 | Donor donation history and donation workflows | Remaining FR-DON requirements; FR-DNR-01 to FR-DNR-06 |
 | Blood donation recording | FR-DNR-01 to FR-DNR-06 |
-| Blood stock management and expiry job | FR-STK-01 to FR-STK-07 |
+| Blood stock expiry job and discard | FR-STK-03, FR-STK-06, FR-STK-07 |
 | Blood request handling with FEFO | FR-REQ-01 to FR-REQ-08 |
 | Reports | FR-RPT-01 to FR-RPT-06 |
 | UI beyond the health-check page | n/a |
@@ -291,6 +292,8 @@ Base URL: `http://localhost:5000`. Details and conventions are in [`backend/READ
 | `POST` | `/api/auth/register` | none | Register as Donor or Hospital/Patient (FR-AUTH-01, FR-AUTH-02, NFR-SEC-01) |
 | `POST` | `/api/auth/login` | none | Authenticate by email + password. Returns session cookie on success (FR-AUTH-03, FR-AUTH-04) |
 | `POST` | `/api/auth/logout` | session | Ends the current session and clears the cookie (FR-AUTH-07) |
+| `GET` | `/api/stock/summary` | Staff, Admin | Counts per group x status, low-stock and expiring-soon alerts (FR-STK-01, 04, 05) |
+| `GET` | `/api/stock/units?bloodGroup=&status=` | Staff, Admin | Units, earliest expiry first, with `expiringSoon` tag (FR-STK-01, 02, 05) |
 | `POST` | `/api/donors` | Staff, Admin | Register and validate a donor (FR-DON-01, FR-DON-02) |
 | `GET` | `/api/donors?status=&bloodGroup=&q=` | Staff, Admin | List and filter donor profiles |
 | `GET` | `/api/donors/{id}` | Staff, Admin | Read a donor profile |
