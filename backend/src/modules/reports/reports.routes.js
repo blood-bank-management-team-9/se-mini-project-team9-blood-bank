@@ -107,4 +107,31 @@ router.get(
   }
 );
 
+// GET /api/reports/:type/export?format=csv|pdf
+// FR-RPT-05, TC-10: CSV and PDF export
+router.get(
+  '/:type/export',
+  requireRole('Staff', 'Admin'),
+  validate([
+    queryValidator('format')
+      .optional()
+      .isIn(['csv', 'pdf', 'CSV', 'PDF'])
+      .withMessage('Export format must be "csv" or "pdf"'),
+    ...reportFilterValidators,
+  ]),
+  async (req, res, next) => {
+    try {
+      const { type } = req.params;
+      const format = req.query.format || 'csv';
+      const file = await reportsService.exportReport(type, format, req.query);
+
+      res.setHeader('Content-Type', file.contentType);
+      res.setHeader('Content-Disposition', `attachment; filename="${file.filename}"`);
+      return res.status(200).send(file.data);
+    } catch (err) {
+      return handleReportError(err, req, res, next);
+    }
+  }
+);
+
 module.exports = router;

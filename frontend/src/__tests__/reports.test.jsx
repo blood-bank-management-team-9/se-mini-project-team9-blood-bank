@@ -138,4 +138,38 @@ describe('Frontend ReportsModule (FR-RPT-01 to 04, FR-RPT-06, TC-09, TC-10, TC-3
     expect(screen.getByText(/Access Denied \(HTTP 403\)/i)).toBeDefined();
     expect(screen.getByText(/Report generation and analytics are restricted to authorized Blood Bank Staff and Administrators only/i)).toBeDefined();
   });
+
+  it('triggers CSV and PDF export endpoints on button click (FR-RPT-05, TC-10)', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        reportType: 'stock',
+        generatedAt: '2026-10-27T10:00:00Z',
+        aggregates: [{ bloodGroup: 'O+', available: 3 }],
+        totalRecords: 3,
+      }),
+      blob: async () => new Blob(['mock content'], { type: 'text/csv' }),
+    });
+
+    window.URL.createObjectURL = vi.fn().mockReturnValue('blob:mock-url');
+    window.URL.revokeObjectURL = vi.fn();
+
+    renderWithAuth(<ReportsModule />, 'Staff');
+
+    const csvBtn = screen.getByRole('button', { name: /Export CSV/i });
+    const pdfBtn = screen.getByRole('button', { name: /Export PDF/i });
+    expect(csvBtn).toBeDefined();
+    expect(pdfBtn).toBeDefined();
+
+    fireEvent.click(csvBtn);
+    await waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalledWith(expect.stringContaining('format=csv'));
+    });
+
+    fireEvent.click(pdfBtn);
+    await waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalledWith(expect.stringContaining('format=pdf'));
+    });
+  });
 });

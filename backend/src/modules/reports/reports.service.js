@@ -161,11 +161,49 @@ async function generateRequestReport(filters = {}, actorUserId = null) {
   return response;
 }
 
+// FR-RPT-05, TC-10: Export reports into CSV and PDF formats
+const reportsExporter = require('./reports.exporter');
+
+async function exportReport(reportType, format, filters = {}) {
+  const normalizedFormat = (format || 'csv').toLowerCase();
+  if (!['csv', 'pdf'].includes(normalizedFormat)) {
+    throw new ReportError('INVALID_FORMAT', 'Export format must be "csv" or "pdf"', 400);
+  }
+
+  let reportData;
+  if (reportType === 'stock') {
+    reportData = await generateStockReport(filters);
+  } else if (reportType === 'donation') {
+    reportData = await generateDonationReport(filters);
+  } else if (reportType === 'request') {
+    reportData = await generateRequestReport(filters);
+  } else {
+    throw new ReportError('INVALID_REPORT_TYPE', `Unknown report type "${reportType}"`, 400);
+  }
+
+  if (normalizedFormat === 'csv') {
+    const csvContent = reportsExporter.exportToCsv(reportType, reportData);
+    return {
+      contentType: 'text/csv',
+      filename: `${reportType}-report-${new Date().toISOString().slice(0, 10)}.csv`,
+      data: Buffer.from(csvContent, 'utf8'),
+    };
+  } else {
+    const pdfBuffer = reportsExporter.exportToPdf(reportType, reportData);
+    return {
+      contentType: 'application/pdf',
+      filename: `${reportType}-report-${new Date().toISOString().slice(0, 10)}.pdf`,
+      data: pdfBuffer,
+    };
+  }
+}
+
 module.exports = {
   generateStockReport,
   generateDonationReport,
   generateRequestReport,
   validateFilters,
+  exportReport,
   ReportError,
   VALID_BLOOD_GROUPS,
   STOCK_STATUSES,

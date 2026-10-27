@@ -140,6 +140,68 @@ export default function ReportsModule({ initialReportType = 'stock' }) {
     setFilters({ from: '', to: '', bloodGroup: '', status: '' });
   };
 
+  const [exporting, setExporting] = useState(false);
+
+  // FR-RPT-05, TC-10: Export reports into CSV and PDF formats
+  const handleExport = async (format = 'csv') => {
+    setExporting(true);
+    const params = new URLSearchParams();
+    if (filters.from) params.append('from', filters.from);
+    if (filters.to) params.append('to', filters.to);
+    if (filters.bloodGroup) params.append('bloodGroup', filters.bloodGroup);
+    if (filters.status) params.append('status', filters.status);
+    params.append('format', format);
+
+    try {
+      const res = await fetch(`/api/reports/${reportType}/export?${params.toString()}`);
+      if (res.ok) {
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${reportType}-report-${new Date().toISOString().slice(0, 10)}.${format}`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+      } else {
+        throw new Error(`Export failed (${res.status})`);
+      }
+    } catch {
+      // Standalone preview fallback: client-side CSV generation
+      if (format === 'csv' && reportData) {
+        let csv = '';
+        if (reportType === 'stock') {
+          csv = 'Blood Group,Available,Reserved,Issued,Expired,Discarded,Earliest Expiry,Total Units\r\n';
+          (reportData.aggregates || []).forEach((r) => {
+            csv += `${r.bloodGroup},${r.available},${r.reserved},${r.issued},${r.expired},${r.discarded},${r.earliestExpiry || 'None'},${r.total}\r\n`;
+          });
+        } else if (reportType === 'donation') {
+          csv = 'Donation ID,Donor ID,Blood Group,Volume (ml),Collection Date,Screening Result,Status\r\n';
+          (reportData.records || []).forEach((r) => {
+            csv += `${r.donationId},${r.donorId},${r.bloodGroup},${r.volumeMl},${r.collectionDate},${r.screeningResult},${r.donationStatus}\r\n`;
+          });
+        } else if (reportType === 'request') {
+          csv = 'Request ID,Hospital Name,Patient Name,Blood Group,Units,Priority,Status,Request Date,Decision Date\r\n';
+          (reportData.records || []).forEach((r) => {
+            csv += `${r.requestId},"${r.hospitalName}","${r.patientName}",${r.bloodGroup},${r.units},${r.priority},${r.status},${r.requestDate},${r.decisionDate || 'Pending'}\r\n`;
+          });
+        }
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${reportType}-report-${new Date().toISOString().slice(0, 10)}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+      }
+    } finally {
+      setExporting(false);
+    }
+  };
+
   // RBAC Access Restriction (FR-RPT-06, TC-09)
   if (!isStaffOrAdmin) {
     return (
@@ -155,14 +217,14 @@ export default function ReportsModule({ initialReportType = 'stock' }) {
     <div className="panel" style={{ maxWidth: '1120px', margin: '0 auto' }}>
       <div className="panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
-          <h1 className="panel-title" style={{ fontSize: '1.5rem' }}>Management Reports & Analytics (FR-RPT-01 to 04)</h1>
+          <h1 className="panel-title" style={{ fontSize: '1.5rem' }}>Management Reports & Analytics (FR-RPT-01 to 05)</h1>
           <p style={{ color: 'var(--slate-500)', fontSize: '0.875rem' }}>
-            Comprehensive inventory, donation volume, and hospital requisition reports covering up to 12 months (NFR-PERF-04).
+            Comprehensive inventory, donation volume, and hospital requisition reports with CSV & PDF export (TC-10).
           </p>
         </div>
 
-        {/* Report Type Selector Tabs */}
-        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+        {/* Report Type Selector Tabs & Export Controls (FR-RPT-05, TC-10) */}
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
           <button
             type="button"
             className={reportType === 'stock' ? 'btn-primary' : 'btn-secondary'}
@@ -186,6 +248,27 @@ export default function ReportsModule({ initialReportType = 'stock' }) {
             style={{ fontSize: '0.85rem', padding: '0.45rem 0.85rem' }}
           >
             📋 Requisitions
+          </button>
+
+          <div style={{ borderLeft: '1px solid var(--slate-200)', height: '24px', margin: '0 0.25rem' }} />
+
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => handleExport('csv')}
+            disabled={exporting}
+            style={{ fontSize: '0.85rem', padding: '0.45rem 0.75rem', fontWeight: 600 }}
+          >
+            📥 Export CSV
+          </button>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => handleExport('pdf')}
+            disabled={exporting}
+            style={{ fontSize: '0.85rem', padding: '0.45rem 0.75rem', fontWeight: 600 }}
+          >
+            📄 Export PDF
           </button>
         </div>
       </div>
