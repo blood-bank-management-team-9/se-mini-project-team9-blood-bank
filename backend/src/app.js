@@ -9,12 +9,35 @@ const sessionMiddleware = require('./middleware/session');
 const { doubleCsrfProtection } = require('./middleware/csrf');
 const { notFound, errorHandler } = require('./middleware/errorHandler');
 
+const { redactionMiddleware } = require('./middleware/redaction');
+
 const app = express();
 app.use(requestId);
-app.use(helmet());
+
+// NFR-SEC-03: Strict-Transport-Security (HSTS) with 1 year max-age, subdomains & preload
+app.use(
+  helmet({
+    hsts: {
+      maxAge: 31536000,
+      includeSubDomains: true,
+      preload: true,
+    },
+  })
+);
+
+// NFR-SEC-03: HTTPS / TLS 1.2+ enforcement behind reverse proxy or in production
+app.use((req, res, next) => {
+  const isHttps = req.secure || req.headers['x-forwarded-proto'] === 'https';
+  if (!isHttps && (process.env.NODE_ENV === 'production' || process.env.REQUIRE_HTTPS === 'true')) {
+    return res.redirect(301, `https://${req.headers.host}${req.url}`);
+  }
+  next();
+});
+
 app.use(cors());
 app.use(express.json());
-app.use(cookieParser());                                // <-- THE MISSING LINE
+app.use(cookieParser());
+app.use(redactionMiddleware);
 if (process.env.NODE_ENV !== 'test') app.use(morgan('dev'));
 
 // NFR-SEC-04: 15-minute idle session, HttpOnly + Secure cookie.

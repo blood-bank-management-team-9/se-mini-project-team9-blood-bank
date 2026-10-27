@@ -123,7 +123,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     expire TIMESTAMP WITH TIME ZONE NOT NULL
 );
 
--- Performance and Integrity Indexes (SAD 3.6)
+-- Performance and Integrity Indexes (SAD 3.6, NFR-PERF-01, NFR-PERF-04)
 CREATE INDEX IF NOT EXISTS idx_blood_units_stock ON blood_units (blood_group, status, expiry_date);
 CREATE INDEX IF NOT EXISTS idx_blood_requests_queue ON blood_requests (status, priority, created_at);
 CREATE INDEX IF NOT EXISTS idx_audit_log_user_date ON audit_log (created_at, user_id);
@@ -131,3 +131,7 @@ CREATE INDEX IF NOT EXISTS idx_donors_phone ON donors (phone);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users (email);
 CREATE INDEX IF NOT EXISTS idx_users_phone ON users (phone);
 CREATE INDEX IF NOT EXISTS idx_sessions_expire ON sessions (expire);
+CREATE INDEX IF NOT EXISTS idx_donors_search ON donors (status, blood_group, city, pin_code);
+CREATE INDEX IF NOT EXISTS idx_donations_donor ON donations (donor_id, collection_date);
+CREATE INDEX IF NOT EXISTS idx_donations_date ON donations (collection_date);
+CREATE INDEX IF NOT EXISTS idx_blood_requests_dates ON blood_requests (created_at, required_by_date);
