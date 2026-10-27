@@ -6,6 +6,7 @@ const { validate } = require('../../middleware/validate');
 const donationService = require('./donations.service');
 
 const DONATION_ROLES = ['Staff'];
+const ALLOWED_CORRECTION_FIELDS = ['volumeMl', 'collectionDate', 'medicalNotes'];
 
 function handleDonationError(err, req, res, next) {
   if (err instanceof donationService.DonationError) {
@@ -26,6 +27,15 @@ router.put(
   requireRole(...DONATION_ROLES),
   validate([
     param('donationId').matches(/^DON-\d{5,}$/).withMessage('Invalid donation id'),
+    body().custom((value) => {
+      if (typeof value === 'object' && value !== null) {
+        const unknown = Object.keys(value).filter((k) => !ALLOWED_CORRECTION_FIELDS.includes(k));
+        if (unknown.length > 0) {
+          throw new Error(`Unknown field(s): ${unknown.join(', ')}`);
+        }
+      }
+      return true;
+    }),
     body('volumeMl').optional()
       .custom((v) => donationService.VOLUMES_ML.includes(v))
       .withMessage('Volume must be 350 or 450 ml'),
@@ -35,19 +45,21 @@ router.put(
       .withMessage('Collection date must be a valid YYYY-MM-DD date'),
     body('medicalNotes').optional({ nullable: true })
       .isString().bail()
+      .trim()
       .isLength({ max: donationService.NOTES_MAX_LENGTH })
       .withMessage('Medical notes must be at most 200 characters'),
   ]),
   async (req, res, next) => {
     try {
+      const changes = {};
+      if (req.body.volumeMl !== undefined) changes.volumeMl = req.body.volumeMl;
+      if (req.body.collectionDate !== undefined) changes.collectionDate = req.body.collectionDate;
+      if (req.body.medicalNotes !== undefined) changes.medicalNotes = req.body.medicalNotes;
+
       const result = await donationService.correctDonation({
         actorUserId: req.session.user.userId,
         donationId: req.params.donationId,
-        changes: {
-          volumeMl: req.body.volumeMl,
-          collectionDate: req.body.collectionDate,
-          medicalNotes: req.body.medicalNotes,
-        },
+        changes,
       });
       return res.status(200).json(result);
     } catch (err) {

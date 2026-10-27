@@ -4,6 +4,7 @@ jest.mock('../../database/transaction', () => ({
 jest.mock('../audit/audit.repository', () => ({ logAudit: jest.fn() }));
 jest.mock('./donations.repository', () => ({
   findDonationForUpdate: jest.fn(),
+  getShelfLifeDays: jest.fn(),
   getDonorGapDays: jest.fn(),
   findGapConflict: jest.fn(),
   findUnitForUpdate: jest.fn(),
@@ -38,6 +39,7 @@ describe('Donation correction (FR-DNR-06, TC-27)', () => {
     repo.findDonationForUpdate.mockResolvedValue(row());
     repo.findUnitForUpdate.mockResolvedValue({ unit_id: 'UNT-10001', status: 'Available' });
     repo.updateDonation.mockResolvedValue(updatedRow);
+    repo.getShelfLifeDays.mockResolvedValue(35);
     repo.getDonorGapDays.mockResolvedValue(90);
     repo.findGapConflict.mockResolvedValue(null);
   });
@@ -74,10 +76,44 @@ describe('Donation correction (FR-DNR-06, TC-27)', () => {
     expect(logAudit).not.toHaveBeenCalled();
   });
 
-  it('blocks the edit when the blood unit is no longer Available', async () => {
+  it('blocks the edit when the blood unit is no longer Available and volume changes', async () => {
     repo.findUnitForUpdate.mockResolvedValue({ unit_id: 'UNT-10001', status: 'Issued' });
     await expect(donationService.correctDonation({ ...base, changes: { volumeMl: 350 } }))
       .rejects.toMatchObject({ code: 'INVALID_STATE', status: 409 });
+    expect(repo.updateDonation).not.toHaveBeenCalled();
+  });
+
+  it('allows a notes-only edit even when the blood unit is Issued', async () => {
+    repo.findUnitForUpdate.mockResolvedValue({ unit_id: 'UNT-10001', status: 'Issued' });
+    await expect(
+      donationService.correctDonation({ ...base, changes: { medicalNotes: 'Corrected notes' } })
+    ).resolves.toMatchObject({ donationId: 'DON-00000001' });
+    expect(repo.updateDonation).toHaveBeenCalledWith(
+      expect.anything(), 'DON-00000001', { medicalNotes: 'Corrected notes' }
+    );
+    expect(repo.updateUnit).not.toHaveBeenCalled();
+  });
+
+  it('succeeds when donation has no unit (findUnitForUpdate returns null)', async () => {
+    repo.findUnitForUpdate.mockResolvedValue(null);
+    await expect(
+      donationService.correctDonation({ ...base, changes: { volumeMl: 350 } })
+    ).resolves.toMatchObject({ donationId: 'DON-00000001' });
+    expect(repo.updateDonation).toHaveBeenCalledWith(
+      expect.anything(), 'DON-00000001', { volumeMl: 350 }
+    );
+    expect(repo.updateUnit).not.toHaveBeenCalled();
+  });
+
+  it('rejects a collection date that would produce an already-expired blood unit', async () => {
+    // collection_date 2026-09-01 + 35 days = 2026-10-06 <= today (2026-10-27)
+    await expect(
+      donationService.correctDonation({ ...base, changes: { collectionDate: '2026-09-01' } })
+    ).rejects.toMatchObject({
+      code: 'VALIDATION_ERROR',
+      status: 400,
+      publicMessage: expect.stringContaining('already-expired'),
+    });
     expect(repo.updateDonation).not.toHaveBeenCalled();
   });
 
@@ -102,7 +138,7 @@ describe('Donation correction (FR-DNR-06, TC-27)', () => {
   it('recalculates the unit and the donor last donation date when the date changes', async () => {
     await donationService.correctDonation({ ...base, changes: { collectionDate: '2026-10-02' } });
     expect(repo.updateUnit).toHaveBeenCalledWith(
-      expect.anything(), 'DON-00000001', { collectionDate: '2026-10-02' }
+      expect.anything(), 'DON-00000001', { volumeMl: undefined, collectionDate: '2026-10-02', shelfLifeDays: 35 }
     );
     expect(repo.syncLastDonationDate).toHaveBeenCalledWith(expect.anything(), 'DNR-00001');
   });
@@ -119,10 +155,39 @@ describe('Donation correction (FR-DNR-06, TC-27)', () => {
     expect(logAudit).not.toHaveBeenCalled();
   });
 
+  it('allows a corrected date exactly gapDays apart from another donation (boundary check)', async () => {
+    // When the gap is exactly 90 days, findGapConflict returns null and correction succeeds
+    repo.findGapConflict.mockResolvedValue(null);
+    await expect(
+      donationService.correctDonation({ ...base, changes: { collectionDate: '2026-10-02' } })
+    ).resolves.toMatchObject({ donationId: 'DON-00000001' });
+    expect(repo.updateDonation).toHaveBeenCalled();
+  });
+
+  it('skips gap check when a non-Recorded donation changes its collection date', async () => {
+    repo.findDonationForUpdate.mockResolvedValue(row({ donation_status: 'Failed Screening' }));
+    await donationService.correctDonation({ ...base, changes: { collectionDate: '2026-10-02' } });
+    expect(repo.getDonorGapDays).not.toHaveBeenCalled();
+    expect(repo.findGapConflict).not.toHaveBeenCalled();
+    expect(repo.syncLastDonationDate).not.toHaveBeenCalled();
+  });
+
+  it('throws 500 CONFIG_ERROR when getDonorGapDays returns null for a Recorded donation', async () => {
+    repo.getDonorGapDays.mockResolvedValue(null);
+    await expect(
+      donationService.correctDonation({ ...base, changes: { collectionDate: '2026-10-02' } })
+    ).rejects.toMatchObject({
+      code: 'CONFIG_ERROR',
+      status: 500,
+    });
+    expect(repo.updateDonation).not.toHaveBeenCalled();
+  });
+
   it('does not check the gap when the date is not changed', async () => {
     await donationService.correctDonation({ ...base, changes: { volumeMl: 350 } });
     expect(repo.getDonorGapDays).not.toHaveBeenCalled();
   });
+
   it('clears medical notes when an empty string is sent', async () => {
     await donationService.correctDonation({ ...base, changes: { medicalNotes: '   ' } });
     expect(repo.updateDonation).toHaveBeenCalledWith(

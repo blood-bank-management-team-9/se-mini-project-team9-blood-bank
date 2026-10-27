@@ -15,9 +15,15 @@ class DonationError extends Error {
   }
 }
 
+function addDays(dateStr, days) {
+  const d = new Date(`${dateStr}T00:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 function normalise(changes) {
   const out = {};
-  if (changes.volumeMl !== undefined) out.volumeMl = changes.volumeMl;
+  if (changes.volumeMl !== undefined) out.volumeMl = Number(changes.volumeMl);
   if (changes.collectionDate !== undefined) out.collectionDate = changes.collectionDate;
   if (changes.medicalNotes !== undefined) {
     const notes = typeof changes.medicalNotes === 'string'
@@ -48,7 +54,7 @@ async function correctDonation({ actorUserId, donationId, changes }) {
     }
 
     const current = {
-      volumeMl: row.volume_ml,
+      volumeMl: row.volume_ml !== null && row.volume_ml !== undefined ? Number(row.volume_ml) : null,
       collectionDate: row.collection_date,
       medicalNotes: row.medical_notes,
     };
@@ -63,14 +69,47 @@ async function correctDonation({ actorUserId, donationId, changes }) {
       original[key] = current[key];
     });
 
+    // Check unit state cheaply before gap check: only volume or collectionDate edits affect the unit.
+    const affectsUnit = next.volumeMl !== undefined || next.collectionDate !== undefined;
+    const unit = await repo.findUnitForUpdate(tx, donationId);
+    if (affectsUnit && unit && unit.status !== 'Available') {
+      throw new DonationError(
+        'INVALID_STATE',
+        `The blood unit is ${unit.status}; this donation can no longer be corrected`,
+        409
+      );
+    }
+
+    // Lower bound on collection date: reject dates that would produce an already-expired unit.
+    let shelfLifeDays = null;
+    if (next.collectionDate !== undefined && unit) {
+      shelfLifeDays = await repo.getShelfLifeDays(tx);
+      const recalculatedExpiry = addDays(next.collectionDate, shelfLifeDays);
+      if (recalculatedExpiry <= row.today) {
+        throw new DonationError(
+          'VALIDATION_ERROR',
+          'Collection date would result in an already-expired blood unit',
+          400
+        );
+      }
+    }
+
     // BR-03: a corrected date must still respect the minimum gap to the donor's other donations.
     if (next.collectionDate !== undefined && row.donation_status === 'Recorded') {
       const gapDays = await repo.getDonorGapDays(tx, row.donor_id);
-      const conflict = gapDays
-        ? await repo.findGapConflict(tx, {
-          donationId, donorId: row.donor_id, collectionDate: next.collectionDate, gapDays,
-        })
-        : null;
+      if (!gapDays) {
+        throw new DonationError(
+          'CONFIG_ERROR',
+          'Invalid or missing donor eligibility gap configuration',
+          500
+        );
+      }
+      const conflict = await repo.findGapConflict(tx, {
+        donationId,
+        donorId: row.donor_id,
+        collectionDate: next.collectionDate,
+        gapDays,
+      });
       if (conflict) {
         const err = new DonationError(
           'NOT_ELIGIBLE',
@@ -84,18 +123,14 @@ async function correctDonation({ actorUserId, donationId, changes }) {
         throw err;
       }
     }
-    const unit = await repo.findUnitForUpdate(tx, donationId);
-    if (unit && unit.status !== 'Available') {
-      throw new DonationError(
-        'INVALID_STATE',
-        `The blood unit is ${unit.status}; this donation can no longer be corrected`,
-        409
-      );
-    }
 
     const updated = await repo.updateDonation(tx, donationId, next);
-    if (unit && (next.volumeMl !== undefined || next.collectionDate !== undefined)) {
-      await repo.updateUnit(tx, donationId, next);
+    if (unit && affectsUnit) {
+      await repo.updateUnit(tx, donationId, {
+        volumeMl: next.volumeMl,
+        collectionDate: next.collectionDate,
+        shelfLifeDays,
+      });
     }
     if (next.collectionDate !== undefined && row.donation_status === 'Recorded') {
       await repo.syncLastDonationDate(tx, row.donor_id);

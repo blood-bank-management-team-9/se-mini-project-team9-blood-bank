@@ -44,11 +44,26 @@ describe('PUT /api/donations/:donationId', () => {
     ['bad date', { collectionDate: '2026-13-45' }],
     ['date in wrong format', { collectionDate: '05/10/2026' }],
     ['notes too long', { medicalNotes: 'x'.repeat(201) }],
+    ['unknown field bloodGroup', { bloodGroup: 'O+' }],
+    ['unknown field screeningStatus', { screeningStatus: 'Passed' }],
   ])('returns 400 for %s', async (label, payload) => {
     const res = await request(app).put(url).send(payload);
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('VALIDATION_ERROR');
     expect(donationService.correctDonation).not.toHaveBeenCalled();
+  });
+
+  it('accepts notes with whitespace padding that trims to at most 200 characters', async () => {
+    donationService.correctDonation.mockResolvedValue({});
+    // 202 characters with 2 leading spaces and 2 trailing spaces, inner length is 198
+    const padded = '  ' + 'a'.repeat(198) + '  ';
+    const res = await request(app).put(url).send({ medicalNotes: padded });
+    expect(res.status).toBe(200);
+    expect(donationService.correctDonation).toHaveBeenCalledWith({
+      actorUserId: 'USR-STF01',
+      donationId: 'DON-00000001',
+      changes: { medicalNotes: 'a'.repeat(198) },
+    });
   });
 
   it('returns 400 for a malformed donation id', async () => {
@@ -65,7 +80,7 @@ describe('PUT /api/donations/:donationId', () => {
     expect(donationService.correctDonation).toHaveBeenCalledWith({
       actorUserId: 'USR-STF01',
       donationId: 'DON-00000001',
-      changes: { volumeMl: 350, collectionDate: undefined, medicalNotes: undefined },
+      changes: { volumeMl: 350 },
     });
   });
 
