@@ -8,6 +8,7 @@ import HospitalDashboard from '../components/dashboards/HospitalDashboard';
 import DonorRegistrationForm from '../components/forms/DonorRegistrationForm';
 import BloodRequestForm from '../components/forms/BloodRequestForm';
 import SearchModule from '../components/search/SearchModule';
+import ReportsModule from '../components/reports/ReportsModule';
 import { getNavigationItems } from '../utils/navigation';
 import { getHealth } from '../services/api';
 
@@ -48,6 +49,11 @@ export default function Home() {
     // Search Module (Sprint 2 - Issue #21)
     if (activeTab === 'search-stock' || activeTab === 'search-donors-stock') {
       return <SearchModule defaultTab={activeTab === 'search-donors-stock' ? 'stock' : 'stock'} />;
+    }
+
+    // Reports Module (Sprint 2 - Issue #22)
+    if (activeTab === 'reports') {
+      return <ReportsModule />;
     }
 
     // Forms
