@@ -8,10 +8,13 @@ const requestId = require('./middleware/requestId');
 const sessionMiddleware = require('./middleware/session');
 const { doubleCsrfProtection } = require('./middleware/csrf');
 const { notFound, errorHandler } = require('./middleware/errorHandler');
-
 const { redactionMiddleware } = require('./middleware/redaction');
 
 const app = express();
+
+// Trust reverse proxy (Nginx) for secure cookies and accurate client IP / protocol
+app.set('trust proxy', 1);
+
 app.use(requestId);
 
 // NFR-SEC-03: Strict-Transport-Security (HSTS) with 1 year max-age, subdomains & preload
@@ -25,11 +28,12 @@ app.use(
   })
 );
 
-// NFR-SEC-03: HTTPS / TLS 1.2+ enforcement behind reverse proxy or in production
+// NFR-SEC-03: HTTPS / TLS 1.2+ enforcement behind reverse proxy or when REQUIRE_HTTPS=true
 app.use((req, res, next) => {
   const isHttps = req.secure || req.headers['x-forwarded-proto'] === 'https';
-  if (!isHttps && (process.env.NODE_ENV === 'production' || process.env.REQUIRE_HTTPS === 'true')) {
-    return res.redirect(301, `https://${req.headers.host}${req.url}`);
+  if (!isHttps && (process.env.REQUIRE_HTTPS === 'true' || (process.env.NODE_ENV === 'production' && req.headers['x-forwarded-proto']))) {
+    const targetHost = process.env.PUBLIC_HOST || req.headers.host;
+    return res.redirect(308, `https://${targetHost}${req.url}`);
   }
   next();
 });
