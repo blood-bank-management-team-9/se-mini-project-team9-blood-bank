@@ -84,7 +84,7 @@ describe('Unit list expiring-soon tagging (FR-STK-05, TC-28)', () => {
 
   it('does not tag already expired, issued or discarded units', async () => {
     repo.listUnits.mockResolvedValue([
-      row('UNT-00001', -1), row('UNT-00002', 3, 'Issued'), row('UNT-00003', 3, 'Discarded'),
+      row('UNT-00001', -1), row('UNT-00004', 0), row('UNT-00002', 3, 'Issued'), row('UNT-00003', 3, 'Discarded'),
     ]);
     const { units } = await stockService.listUnits();
     expect(units.every((u) => u.expiringSoon === false)).toBe(true);

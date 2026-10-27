@@ -78,6 +78,8 @@ async function getSummary() {
 function toUnitDto(row, expiringSoonDays) {
   const days = Number(row.days_to_expiry);
   const live = row.status === 'Available' || row.status === 'Reserved';
+  // A unit expiring today is already treated as Expired (ADR-05), so only days 1..N count.
+  const soon = live && days > 0 && days <= expiringSoonDays;
   return {
     unitId: row.unit_id,
     donationId: row.donation_id,
@@ -88,8 +90,8 @@ function toUnitDto(row, expiringSoonDays) {
     status: row.status,
     discardReason: row.discard_reason,
     daysToExpiry: days,
-    expiringSoon: live && days >= 0 && days <= expiringSoonDays,
-    expiringSoonLabel: live && days >= 0 && days <= expiringSoonDays ? 'Expiring Soon' : null,
+    expiringSoon: soon,
+    expiringSoonLabel: soon ? 'Expiring Soon' : null,
   };
 }
 
