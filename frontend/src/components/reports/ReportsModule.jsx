@@ -305,7 +305,7 @@ export default function ReportsModule({ initialReportType = 'stock' }) {
                         {reportData.aggregates.map((row) => (
                           <tr key={row.bloodGroup}>
                             <td><strong>{row.bloodGroup}</strong></td>
-                            <td><span className="badge badge-available">{row.available}</span></td>
+                            <td><span className="badge badge-available" data-testid={`stock-available-${row.bloodGroup}`}>{row.available}</span></td>
                             <td><span className="badge badge-reserved">{row.reserved}</span></td>
                             <td><span className="badge badge-issued">{row.issued}</span></td>
                             <td><span className="badge badge-expired">{row.expired}</span></td>

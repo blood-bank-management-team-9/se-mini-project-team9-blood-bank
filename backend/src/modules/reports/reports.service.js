@@ -1,11 +1,13 @@
 // C11 Report Service — Business Logic (SAD 3.4, 4.3, SRS 5.8)
 
 const reportsRepo = require('./reports.repository');
-
-const VALID_BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
-const VALID_STOCK_STATUSES = ['Available', 'Reserved', 'Issued', 'Expired', 'Discarded'];
-const VALID_DONATION_STATUSES = ['Recorded', 'Failed Screening'];
-const VALID_REQUEST_STATUSES = ['Pending', 'Approved', 'Rejected', 'Issued', 'Cancelled'];
+const { logAudit } = require('../audit/audit.repository');
+const {
+  VALID_BLOOD_GROUPS,
+  STOCK_STATUSES,
+  REQUEST_STATUSES,
+  DONATION_SCREENING_STATUSES,
+} = require('../../config/constants');
 
 class ReportError extends Error {
   constructor(code, message, status = 400) {
@@ -17,6 +19,19 @@ class ReportError extends Error {
   }
 }
 
+const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
+function isValidDateString(str) {
+  if (!DATE_REGEX.test(str)) return false;
+  const [year, month, day] = str.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+}
+
 function validateFilters({ from, to, bloodGroup, status }, validStatuses) {
   if (bloodGroup && !VALID_BLOOD_GROUPS.includes(bloodGroup)) {
     throw new ReportError('INVALID_BLOOD_GROUP', 'Invalid blood group filter', 400);
@@ -24,20 +39,35 @@ function validateFilters({ from, to, bloodGroup, status }, validStatuses) {
   if (status && validStatuses && !validStatuses.includes(status)) {
     throw new ReportError('INVALID_STATUS', `Invalid status filter (allowed: ${validStatuses.join(', ')})`, 400);
   }
-  if (from && isNaN(Date.parse(from))) {
+  if (from && !isValidDateString(from)) {
     throw new ReportError('INVALID_DATE', 'Invalid "from" date format (YYYY-MM-DD expected)', 400);
   }
-  if (to && isNaN(Date.parse(to))) {
+  if (to && !isValidDateString(to)) {
     throw new ReportError('INVALID_DATE', 'Invalid "to" date format (YYYY-MM-DD expected)', 400);
   }
-  if (from && to && new Date(from) > new Date(to)) {
+  if (from && to && from > to) {
     throw new ReportError('INVALID_DATE_RANGE', '"from" date must be earlier than or equal to "to" date', 400);
   }
 }
 
+async function recordReportAudit(actorUserId, reportType, criteria) {
+  if (!actorUserId) return;
+  try {
+    await logAudit({
+      userId: actorUserId,
+      action: 'REPORT_GENERATED',
+      entity: 'reports',
+      entityId: reportType,
+      newValue: { criteria },
+    });
+  } catch (err) {
+    // Non-fatal if audit repository is unpersisted in test
+  }
+}
+
 // FR-RPT-01: Stock Report
-async function generateStockReport(filters = {}) {
-  validateFilters(filters, VALID_STOCK_STATUSES);
+async function generateStockReport(filters = {}, actorUserId = null) {
+  validateFilters(filters, STOCK_STATUSES);
 
   const data = await reportsRepo.getStockReport(filters);
 
@@ -46,6 +76,8 @@ async function generateStockReport(filters = {}) {
   if (filters.to) criteria.to = filters.to;
   if (filters.bloodGroup) criteria.bloodGroup = filters.bloodGroup;
   if (filters.status) criteria.status = filters.status;
+
+  await recordReportAudit(actorUserId, 'stock', criteria);
 
   const response = {
     reportType: 'stock',
@@ -56,7 +88,6 @@ async function generateStockReport(filters = {}) {
     totalRecords: data.totalUnits,
   };
 
-  // FR-RPT-06: Showing "No records found" when a search returns no data
   if (data.totalUnits === 0) {
     response.message = 'No records found';
   }
@@ -65,8 +96,8 @@ async function generateStockReport(filters = {}) {
 }
 
 // FR-RPT-02: Donation Report
-async function generateDonationReport(filters = {}) {
-  validateFilters(filters, VALID_DONATION_STATUSES);
+async function generateDonationReport(filters = {}, actorUserId = null) {
+  validateFilters(filters, DONATION_SCREENING_STATUSES);
 
   const data = await reportsRepo.getDonationReport(filters);
 
@@ -75,6 +106,8 @@ async function generateDonationReport(filters = {}) {
   if (filters.to) criteria.to = filters.to;
   if (filters.bloodGroup) criteria.bloodGroup = filters.bloodGroup;
   if (filters.status) criteria.status = filters.status;
+
+  await recordReportAudit(actorUserId, 'donation', criteria);
 
   const response = {
     reportType: 'donation',
@@ -96,8 +129,8 @@ async function generateDonationReport(filters = {}) {
 }
 
 // FR-RPT-03: Request Report
-async function generateRequestReport(filters = {}) {
-  validateFilters(filters, VALID_REQUEST_STATUSES);
+async function generateRequestReport(filters = {}, actorUserId = null) {
+  validateFilters(filters, REQUEST_STATUSES);
 
   const data = await reportsRepo.getRequestReport(filters);
 
@@ -106,6 +139,8 @@ async function generateRequestReport(filters = {}) {
   if (filters.to) criteria.to = filters.to;
   if (filters.bloodGroup) criteria.bloodGroup = filters.bloodGroup;
   if (filters.status) criteria.status = filters.status;
+
+  await recordReportAudit(actorUserId, 'request', criteria);
 
   const response = {
     reportType: 'request',
@@ -130,6 +165,10 @@ module.exports = {
   generateStockReport,
   generateDonationReport,
   generateRequestReport,
+  validateFilters,
   ReportError,
   VALID_BLOOD_GROUPS,
+  STOCK_STATUSES,
+  REQUEST_STATUSES,
+  DONATION_SCREENING_STATUSES,
 };

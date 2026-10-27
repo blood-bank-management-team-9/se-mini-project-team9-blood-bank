@@ -45,7 +45,7 @@ describe('Frontend ReportsModule (FR-RPT-01 to 04, FR-RPT-06, TC-09, TC-10, TC-3
     await waitFor(() => {
       expect(screen.getByText(/Blood Stock Inventory Summary/i)).toBeDefined();
       expect(screen.getByText('2026-11-05')).toBeDefined();
-      expect(screen.getByText('5')).toBeDefined();
+      expect(screen.getByTestId('stock-available-O+').textContent).toBe('5');
     });
   });
 

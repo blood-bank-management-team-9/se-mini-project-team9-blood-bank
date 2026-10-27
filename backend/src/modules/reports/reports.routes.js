@@ -25,33 +25,37 @@ function handleReportError(err, req, res, next) {
   return next(err);
 }
 
-// Common filter validations
-const reportFilterValidators = [
+// Common filter validations (strict YYYY-MM-DD format as in PR #56)
+const commonValidators = [
   queryValidator('from')
     .optional()
-    .isISO8601()
-    .withMessage('from date must be valid ISO8601 date (YYYY-MM-DD)'),
+    .matches(/^\d{4}-\d{2}-\d{2}$/)
+    .withMessage('from date must be in YYYY-MM-DD format'),
   queryValidator('to')
     .optional()
-    .isISO8601()
-    .withMessage('to date must be valid ISO8601 date (YYYY-MM-DD)'),
+    .matches(/^\d{4}-\d{2}-\d{2}$/)
+    .withMessage('to date must be in YYYY-MM-DD format'),
   queryValidator('bloodGroup')
     .optional()
     .isIn(reportsService.VALID_BLOOD_GROUPS)
     .withMessage('Invalid blood group filter'),
-  queryValidator('status')
-    .optional()
-    .trim(),
 ];
 
 // GET /api/reports/stock
 router.get(
   '/stock',
   requireRole('Staff', 'Admin'),
-  validate(reportFilterValidators),
+  validate([
+    ...commonValidators,
+    queryValidator('status')
+      .optional()
+      .isIn(reportsService.STOCK_STATUSES)
+      .withMessage(`Invalid status (allowed: ${reportsService.STOCK_STATUSES.join(', ')})`),
+  ]),
   async (req, res, next) => {
     try {
-      const report = await reportsService.generateStockReport(req.query);
+      const actorUserId = req.session?.user?.userId;
+      const report = await reportsService.generateStockReport(req.query, actorUserId);
       return res.status(200).json(report);
     } catch (err) {
       return handleReportError(err, req, res, next);
@@ -63,10 +67,17 @@ router.get(
 router.get(
   '/donation',
   requireRole('Staff', 'Admin'),
-  validate(reportFilterValidators),
+  validate([
+    ...commonValidators,
+    queryValidator('status')
+      .optional()
+      .isIn(reportsService.DONATION_SCREENING_STATUSES)
+      .withMessage(`Invalid status (allowed: ${reportsService.DONATION_SCREENING_STATUSES.join(', ')})`),
+  ]),
   async (req, res, next) => {
     try {
-      const report = await reportsService.generateDonationReport(req.query);
+      const actorUserId = req.session?.user?.userId;
+      const report = await reportsService.generateDonationReport(req.query, actorUserId);
       return res.status(200).json(report);
     } catch (err) {
       return handleReportError(err, req, res, next);
@@ -78,10 +89,17 @@ router.get(
 router.get(
   '/request',
   requireRole('Staff', 'Admin'),
-  validate(reportFilterValidators),
+  validate([
+    ...commonValidators,
+    queryValidator('status')
+      .optional()
+      .isIn(reportsService.REQUEST_STATUSES)
+      .withMessage(`Invalid status (allowed: ${reportsService.REQUEST_STATUSES.join(', ')})`),
+  ]),
   async (req, res, next) => {
     try {
-      const report = await reportsService.generateRequestReport(req.query);
+      const actorUserId = req.session?.user?.userId;
+      const report = await reportsService.generateRequestReport(req.query, actorUserId);
       return res.status(200).json(report);
     } catch (err) {
       return handleReportError(err, req, res, next);
