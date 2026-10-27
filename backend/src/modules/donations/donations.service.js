@@ -38,9 +38,9 @@ async function correctDonation({ actorUserId, donationId, changes }) {
     if (!row) throw new DonationError('NOT_FOUND', 'Donation not found', 404);
     if (!row.within_window) {
       throw new DonationError(
-        'CORRECTION_WINDOW_CLOSED',
+        'EDIT_WINDOW_EXPIRED',
         'A donation can only be corrected within 24 hours of creation',
-        403
+        409
       );
     }
     if (requested.collectionDate && requested.collectionDate > row.today) {

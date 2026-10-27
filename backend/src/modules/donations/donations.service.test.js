@@ -53,7 +53,7 @@ describe('Donation correction (FR-DNR-06, TC-27)', () => {
   it('refuses an edit after 24 hours', async () => {
     repo.findDonationForUpdate.mockResolvedValue(row({ within_window: false }));
     await expect(donationService.correctDonation({ ...base, changes: { volumeMl: 350 } }))
-      .rejects.toMatchObject({ code: 'CORRECTION_WINDOW_CLOSED', status: 403 });
+      .rejects.toMatchObject({ code: 'EDIT_WINDOW_EXPIRED', status: 409 });
     expect(repo.updateDonation).not.toHaveBeenCalled();
     expect(logAudit).not.toHaveBeenCalled();
   });

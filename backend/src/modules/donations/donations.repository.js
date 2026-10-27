@@ -45,7 +45,7 @@ async function updateUnit(tx, donationId, { volumeMl = null, collectionDate = nu
     `UPDATE blood_units
         SET volume_ml = COALESCE($2::int, volume_ml),
             collection_date = COALESCE($3::date, collection_date),
-            expiry_date = CASE WHEN $3::date IS NULL THEN expiry_date ELSE $3::date + 35 END
+            expiry_date = CASE WHEN $3::date IS NULL THEN expiry_date ELSE $3::date + COALESCE((SELECT value::int FROM system_config WHERE key = 'shelf_life_days'), 35) END
       WHERE donation_id = $1`,
     [donationId, volumeMl, collectionDate]
   );

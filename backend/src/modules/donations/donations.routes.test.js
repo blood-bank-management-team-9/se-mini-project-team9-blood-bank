@@ -69,12 +69,12 @@ describe('PUT /api/donations/:donationId', () => {
     });
   });
 
-  it('maps the closed 24 hour window to 403', async () => {
+  it('maps the closed 24 hour window to 409', async () => {
     donationService.correctDonation.mockRejectedValue(
-      new donationService.DonationError('CORRECTION_WINDOW_CLOSED', 'Window closed', 403)
+      new donationService.DonationError('EDIT_WINDOW_EXPIRED', 'Window closed', 409)
     );
     const res = await request(app).put(url).send({ volumeMl: 350 });
-    expect(res.status).toBe(403);
-    expect(res.body.error.code).toBe('CORRECTION_WINDOW_CLOSED');
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe('EDIT_WINDOW_EXPIRED');
   });
 });
