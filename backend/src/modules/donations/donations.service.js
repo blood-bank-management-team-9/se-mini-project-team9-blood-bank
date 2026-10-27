@@ -63,6 +63,27 @@ async function correctDonation({ actorUserId, donationId, changes }) {
       original[key] = current[key];
     });
 
+    // BR-03: a corrected date must still respect the minimum gap to the donor's other donations.
+    if (next.collectionDate !== undefined && row.donation_status === 'Recorded') {
+      const gapDays = await repo.getDonorGapDays(tx, row.donor_id);
+      const conflict = gapDays
+        ? await repo.findGapConflict(tx, {
+          donationId, donorId: row.donor_id, collectionDate: next.collectionDate, gapDays,
+        })
+        : null;
+      if (conflict) {
+        const err = new DonationError(
+          'NOT_ELIGIBLE',
+          'The corrected date breaks the minimum gap between donations',
+          422
+        );
+        err.reasons = [{
+          code: 'DONATION_GAP_NOT_MET',
+          message: `This date is within ${gapDays} days of the donor's donation on ${conflict.collection_date}.`,
+        }];
+        throw err;
+      }
+    }
     const unit = await repo.findUnitForUpdate(tx, donationId);
     if (unit && unit.status !== 'Available') {
       throw new DonationError(

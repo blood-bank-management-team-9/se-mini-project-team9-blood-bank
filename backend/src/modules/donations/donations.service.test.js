@@ -4,6 +4,8 @@ jest.mock('../../database/transaction', () => ({
 jest.mock('../audit/audit.repository', () => ({ logAudit: jest.fn() }));
 jest.mock('./donations.repository', () => ({
   findDonationForUpdate: jest.fn(),
+  getDonorGapDays: jest.fn(),
+  findGapConflict: jest.fn(),
   findUnitForUpdate: jest.fn(),
   updateDonation: jest.fn(),
   updateUnit: jest.fn(),
@@ -36,6 +38,8 @@ describe('Donation correction (FR-DNR-06, TC-27)', () => {
     repo.findDonationForUpdate.mockResolvedValue(row());
     repo.findUnitForUpdate.mockResolvedValue({ unit_id: 'UNT-10001', status: 'Available' });
     repo.updateDonation.mockResolvedValue(updatedRow);
+    repo.getDonorGapDays.mockResolvedValue(90);
+    repo.findGapConflict.mockResolvedValue(null);
   });
 
   it('rejects a request with no fields', async () => {
@@ -103,6 +107,22 @@ describe('Donation correction (FR-DNR-06, TC-27)', () => {
     expect(repo.syncLastDonationDate).toHaveBeenCalledWith(expect.anything(), 'DNR-00001');
   });
 
+  it('blocks a corrected date that breaks the minimum gap to another donation (422)', async () => {
+    repo.findGapConflict.mockResolvedValue({ donation_id: 'DON-00000002', collection_date: '2026-09-20' });
+    await expect(donationService.correctDonation({ ...base, changes: { collectionDate: '2026-10-02' } }))
+      .rejects.toMatchObject({
+        code: 'NOT_ELIGIBLE',
+        status: 422,
+        reasons: [expect.objectContaining({ code: 'DONATION_GAP_NOT_MET' })],
+      });
+    expect(repo.updateDonation).not.toHaveBeenCalled();
+    expect(logAudit).not.toHaveBeenCalled();
+  });
+
+  it('does not check the gap when the date is not changed', async () => {
+    await donationService.correctDonation({ ...base, changes: { volumeMl: 350 } });
+    expect(repo.getDonorGapDays).not.toHaveBeenCalled();
+  });
   it('clears medical notes when an empty string is sent', async () => {
     await donationService.correctDonation({ ...base, changes: { medicalNotes: '   ' } });
     expect(repo.updateDonation).toHaveBeenCalledWith(

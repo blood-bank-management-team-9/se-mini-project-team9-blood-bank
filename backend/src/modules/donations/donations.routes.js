@@ -1,16 +1,21 @@
-// C8 Donation API (SAD 4.3 PUT /api/donations/{id}, FR-DNR-06). Staff (and Admin) only.
+// C8 Donation API (SAD 4.3 PUT /api/donations/{id}, FR-DNR-06). Staff only (BR-01).
 const router = require('express').Router();
 const { body, param } = require('express-validator');
 const { requireRole } = require('../../middleware/rbac');
 const { validate } = require('../../middleware/validate');
 const donationService = require('./donations.service');
 
-const DONATION_ROLES = ['Staff', 'Admin'];
+const DONATION_ROLES = ['Staff'];
 
 function handleDonationError(err, req, res, next) {
   if (err instanceof donationService.DonationError) {
     return res.status(err.status).json({
-      error: { code: err.code, message: err.publicMessage, requestId: req.id },
+      error: {
+        code: err.code,
+        message: err.publicMessage,
+        ...(err.reasons ? { reasons: err.reasons } : {}),
+        requestId: req.id,
+      },
     });
   }
   return next(err);

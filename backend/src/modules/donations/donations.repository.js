@@ -10,7 +10,7 @@ async function findDonationForUpdate(tx, donationId) {
   const { rows } = await tx.query(
     `SELECT donation_id, donor_id, donation_status, volume_ml, medical_notes,
             to_char(collection_date, 'YYYY-MM-DD') AS collection_date,
-            to_char(CURRENT_DATE, 'YYYY-MM-DD') AS today,
+            to_char((NOW() AT TIME ZONE 'Asia/Kolkata')::date, 'YYYY-MM-DD') AS today,
             (created_at > NOW() - INTERVAL '24 hours') AS within_window
        FROM donations WHERE donation_id = $1 FOR UPDATE`,
     [donationId]
@@ -62,7 +62,36 @@ async function syncLastDonationDate(tx, donorId) {
   );
 }
 
+// BR-03: minimum gap (days) for this donor, from system_config by gender.
+async function getDonorGapDays(tx, donorId) {
+  const { rows } = await tx.query(
+    `SELECT d.gender,
+            (SELECT value FROM system_config WHERE key = 'eligibility_gap_days_male') AS male_gap,
+            (SELECT value FROM system_config WHERE key = 'eligibility_gap_days_other') AS other_gap
+       FROM donors d WHERE d.donor_id = $1`,
+    [donorId]
+  );
+  if (!rows[0]) return null;
+  const gap = Number(rows[0].gender === 'Male' ? rows[0].male_gap : rows[0].other_gap);
+  return Number.isInteger(gap) && gap > 0 ? gap : null;
+}
+
+// Another Recorded donation of the same donor closer than gapDays to the given date.
+async function findGapConflict(tx, { donationId, donorId, collectionDate, gapDays }) {
+  const { rows } = await tx.query(
+    `SELECT donation_id, to_char(collection_date, 'YYYY-MM-DD') AS collection_date
+       FROM donations
+      WHERE donor_id = $1 AND donation_id <> $2 AND donation_status = 'Recorded'
+        AND ABS(collection_date - $3::date) < $4::int
+      ORDER BY collection_date
+      LIMIT 1`,
+    [donorId, donationId, collectionDate, gapDays]
+  );
+  return rows[0] || null;
+}
 module.exports = {
+  getDonorGapDays,
+  findGapConflict,
   findDonationForUpdate,
   findUnitForUpdate,
   updateDonation,
