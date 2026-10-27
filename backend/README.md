@@ -11,8 +11,8 @@ Built with Node.js, Express and PostgreSQL. It implements the C3 API Layer, mean
 > **Scope of this README: backend only.** Frontend and team-level documentation live elsewhere in the repository.
 
 > **Status: partial implementation.**
-> Implemented and verified: request tracing, sessions, RBAC, CSRF, validation, error handling, transactions, audit logging, registration, login (with lockout), logout, admin user management, and audit retention.
-> Not implemented: password reset and the donor, donation, stock, request and report modules (see [Section 11](#11-not-in-this-branch)).
+> Implemented: request tracing, sessions, RBAC, CSRF, validation, error handling, transactions, audit logging, registration, login (with lockout), logout, donor profile management and eligibility, admin user management, and audit retention.
+> Not implemented: password reset, donation, stock, request and report modules (see [Section 11](#11-not-in-this-branch)).
 
 ---
 
@@ -87,6 +87,8 @@ Background: `node-cron` runs the audit retention job daily at 02:00 (Section 6.4
 | **Login by email + password, with lockout** | FR-AUTH-03, FR-AUTH-04 | `src/modules/auth/` |
 | **Logout (session destroyed, cookie cleared)** | FR-AUTH-07 | `src/modules/auth/` |
 | Login/logout audit events | NFR-SEC-06 | `src/modules/auth/auth.service.js` |
+| Donor profile CRUD, validation, status changes and audit events | FR-DON-01, FR-DON-02, FR-DON-03, FR-DON-07 | `src/modules/donors/` |
+| Config-driven eligibility evaluation with specific ineligibility reasons | FR-DON-04, FR-DON-05, BR-03 | `src/modules/donors/donorEligibility.js` |
 | Admin user management (staff create, list, status, role) | FR-ADM-01 to FR-ADM-06 | `src/modules/admin/` |
 | Audit log viewer (admin only) | FR-ADM-05 | `src/modules/admin/` |
 | Demonstration and test-only routes | n/a | `src/modules/auth/auth.routes.js` |
@@ -100,6 +102,8 @@ Background: `node-cron` runs the audit retention job daily at 02:00 (Section 6.4
 | FR-AUTH-01, FR-AUTH-02 | `POST /api/auth/register` | [Section 7.9](#79-registration-fr-auth-01-fr-auth-02-nfr-sec-01), `auth.register.test.js` |
 | FR-AUTH-03, FR-AUTH-04 | `POST /api/auth/login` | `auth.login.test.js` |
 | FR-AUTH-07 | `POST /api/auth/logout` | `auth.login.test.js` |
+| FR-DON-01, FR-DON-02, FR-DON-03, FR-DON-07 | `/api/donors*` | `donors.test.js` (STP TC-22, TC-36) |
+| FR-DON-04, FR-DON-05, BR-03 | `GET /api/donors/{id}/eligibility` | `donorEligibility.test.js`, `donors.test.js` (STP TC-23) |
 | FR-ADM-01 to FR-ADM-06 | `/api/admin/users*` | `admin.test.js` |
 | NFR-SEC-06 | Audit writes + 365-day retention | `auth.login.test.js`, `admin.test.js`, `audit.retention.test.js` |
 | NFR-SEC-01 | Registration credential handling | [Section 7.9](#79-registration-fr-auth-01-fr-auth-02-nfr-sec-01) |
@@ -229,6 +233,12 @@ Only these routes are mounted. Everything else is future work.
 | `POST` | `/api/auth/register` | none | Register as Donor or Hospital/Patient (FR-AUTH-01, FR-AUTH-02, NFR-SEC-01) |
 | `POST` | `/api/auth/login` | none | Authenticate by email + password. Returns session cookie on success (FR-AUTH-03, FR-AUTH-04) |
 | `POST` | `/api/auth/logout` | session | Ends the current session and clears the cookie (FR-AUTH-07) |
+| `POST` | `/api/donors` | Staff, Admin | Register and validate a donor (FR-DON-01, FR-DON-02) |
+| `GET` | `/api/donors?status=&bloodGroup=&q=` | Staff, Admin | List and filter donor profiles |
+| `GET` | `/api/donors/{id}` | Staff, Admin | Read a donor profile |
+| `GET` | `/api/donors/{id}/eligibility` | Staff, Admin | Evaluate eligibility using system configuration and return reason codes/messages (FR-DON-04, FR-DON-05, BR-03) |
+| `PUT` | `/api/donors/{id}` | Staff, Admin | Update a donor profile (FR-DON-03) |
+| `PATCH` | `/api/donors/{id}/status` | Staff, Admin | Deactivate or reactivate a donor (FR-DON-07) |
 | `POST` | `/api/admin/users` | Admin | Create a Staff account (FR-ADM-01) |
 | `GET` | `/api/admin/users?role=&status=&q=` | Admin | List and filter users (FR-ADM-02) |
 | `PATCH` | `/api/admin/users/{id}/status` | Admin | Activate/deactivate user; blocks last-admin deactivation (FR-ADM-03, FR-ADM-06) |
@@ -237,6 +247,8 @@ Only these routes are mounted. Everything else is future work.
 
 > **Security:** `__dev-session` and `__dev-logout` exist only when `NODE_ENV !== 'production'`.
 > Real login and logout now exist, so these helpers should be removed once nothing depends on them.
+
+The eligibility response includes `eligible`, `evaluatedAt`, `nextEligibleDate`, and `ineligibilityReasons` (each with a stable `code` and human-readable `message`). Rules are loaded from `system_config` on each check: minimum/maximum age, minimum weight, and the sex-based donation interval. Profile validation accepts otherwise valid ineligible records so that this endpoint can explain why they cannot donate.
 
 ### 6.2 Conventions
 
@@ -489,7 +501,7 @@ npm run lint --prefix backend
 
 All suites should pass and lint should print nothing (0 errors, 0 warnings).
 Suites that need a database skip automatically when `DATABASE_URL` is not set.
-Current state at the time of writing: **10 suites, 62 tests**.
+Current state at the time of writing: **14 suites, 88 tests**.
 
 ---
 
@@ -568,7 +580,6 @@ Two reorderings fail silently:
 Owned by other stories. Do not assume they exist.
 
 - Password reset (FR-AUTH-05)
-- Donor management and the eligibility engine
 - Donation recording and unit creation
 - Stock management and the expiry job
 - Blood request approval with FEFO

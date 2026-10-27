@@ -239,7 +239,7 @@ export default function SearchModule({ defaultTab = 'stock' }) {
                     </div>
                     <div className="stat-card">
                       <span className="stat-label">Available Units</span>
-                      <span className="stat-value" style={{ color: 'var(--success)' }}>{stockResult.availableUnits}</span>
+                      <span className="stat-value" data-testid="stat-available-units" style={{ color: 'var(--success)' }}>{stockResult.availableUnits}</span>
                       <span className="stat-desc">Ready for allocation</span>
                     </div>
                     <div className="stat-card">

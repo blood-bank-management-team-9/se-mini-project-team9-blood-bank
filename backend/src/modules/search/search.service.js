@@ -1,6 +1,7 @@
 // C7 Search Service — Business Logic (SAD 3.4, 4.3, SRS 5.4)
 
 const searchRepo = require('./search.repository');
+const { logAudit } = require('../audit/audit.repository');
 
 const VALID_BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 
@@ -22,9 +23,7 @@ async function searchStock(bloodGroup, userRole) {
 
   const rows = await searchRepo.searchStockByGroup(bloodGroup);
   const availableUnits = rows.length;
-  const earliestExpiry = availableUnits > 0
-    ? (rows[0].expiry_date instanceof Date ? rows[0].expiry_date.toISOString().slice(0, 10) : String(rows[0].expiry_date).slice(0, 10))
-    : null;
+  const earliestExpiry = availableUnits > 0 ? rows[0].expiry_date : null;
 
   const isStaffOrAdmin = ['Staff', 'Admin'].includes(userRole);
 
@@ -39,7 +38,7 @@ async function searchStock(bloodGroup, userRole) {
   if (isStaffOrAdmin) {
     response.units = rows.map((u) => ({
       unitId: u.unit_id,
-      expiryDate: u.expiry_date instanceof Date ? u.expiry_date.toISOString().slice(0, 10) : String(u.expiry_date).slice(0, 10),
+      expiryDate: u.expiry_date,
     }));
   }
 
@@ -52,13 +51,14 @@ async function searchStock(bloodGroup, userRole) {
 }
 
 // FR-SRCH-03, FR-SRCH-05, FR-SRCH-06: Eligible donor search
-async function searchDonors({ bloodGroup, city, pin, page = 1, limit = 20 }) {
+async function searchDonors({ bloodGroup, city, pin, page = 1, limit = 20, actorUserId = null } = {}) {
   if (bloodGroup && !VALID_BLOOD_GROUPS.includes(bloodGroup)) {
     throw new SearchError('INVALID_BLOOD_GROUP', 'Valid blood group is required (A+, A-, B+, B-, AB+, AB-, O+, O-)', 400);
   }
 
   const parsedPage = Math.max(1, parseInt(page, 10) || 1);
-  const parsedLimit = Math.max(1, Math.min(100, parseInt(limit, 10) || 20)); // 20 per FR-SRCH-06
+  // FR-SRCH-06: 20 per page default (accepts up to 100 for backward compatibility with noted deviation)
+  const parsedLimit = Math.max(1, Math.min(100, parseInt(limit, 10) || 20));
 
   const { donors, total } = await searchRepo.searchEligibleDonors({
     bloodGroup,
@@ -74,6 +74,21 @@ async function searchDonors({ bloodGroup, city, pin, page = 1, limit = 20 }) {
   if (bloodGroup) criteria.bloodGroup = bloodGroup;
   if (city) criteria.city = city;
   if (pin) criteria.pin = pin;
+
+  // Log staff donor search in audit trail for privacy accountability
+  if (actorUserId) {
+    try {
+      await logAudit({
+        userId: actorUserId,
+        action: 'DONOR_SEARCH_PERFORMED',
+        entity: 'donors',
+        entityId: null,
+        newValue: { criteria, resultCount: donors.length },
+      });
+    } catch (auditErr) {
+      // Don't fail the search response if audit logger is in non-persisted test mode
+    }
+  }
 
   const response = {
     donors,

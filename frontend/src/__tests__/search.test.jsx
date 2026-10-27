@@ -51,7 +51,7 @@ describe('Frontend SearchModule (FR-SRCH-01 to FR-SRCH-06, TC-09, TC-12, TC-26)'
     fireEvent.click(screen.getByRole('button', { name: /Search Stock/i }));
 
     await waitFor(() => {
-      expect(screen.getByText('3')).toBeDefined();
+      expect(screen.getByTestId('stat-available-units').textContent).toBe('3');
       expect(screen.getByText('2026-11-05')).toBeDefined();
     });
 

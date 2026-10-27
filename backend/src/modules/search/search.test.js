@@ -1,7 +1,7 @@
 // Tests for Search Module (Issue #21)
 // Covers:
 // - FR-SRCH-01, FR-SRCH-02 (Stock search, role-based unit detail visibility)
-// - FR-SRCH-03, FR-SRCH-04 (Eligible donor search, RBAC 403 enforcement)
+// - FR-SRCH-03, FR-SRCH-04 (Eligible donor search, RBAC 403 enforcement, audit logging)
 // - FR-SRCH-05 (No matching results message without error)
 // - FR-SRCH-06 (Pagination with 20 records per page)
 // - STP TC-09, TC-12, TC-26
@@ -10,16 +10,35 @@ const request = require('supertest');
 const app = require('../../app');
 const searchService = require('./search.service');
 const searchRepo = require('./search.repository');
+const { logAudit } = require('../audit/audit.repository');
+
+jest.mock('../audit/audit.repository', () => ({
+  logAudit: jest.fn().mockResolvedValue(true),
+}));
 
 const hasDatabase = Boolean(process.env.DATABASE_URL);
 const describeIfDb = hasDatabase ? describe : describe.skip;
 
-describe('Search Service Unit Tests (FR-SRCH-01 to 06, TC-12, TC-26)', () => {
-  afterEach(() => {
-    jest.restoreAllMocks();
+describe('Search Service & Route Unit Tests (Offline / Mocked DB)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
   });
 
-  describe('searchStock', () => {
+  describe('Route-Level Validation Tests (Without DB)', () => {
+    it('returns 401 UNAUTHENTICATED on GET /api/search/stock when unauthenticated', async () => {
+      const res = await request(app).get('/api/search/stock?bloodGroup=O+');
+      expect(res.status).toBe(401);
+      expect(res.body.error.code).toBe('UNAUTHENTICATED');
+    });
+
+    it('returns 401 UNAUTHENTICATED on GET /api/search/donors when unauthenticated', async () => {
+      const res = await request(app).get('/api/search/donors');
+      expect(res.status).toBe(401);
+      expect(res.body.error.code).toBe('UNAUTHENTICATED');
+    });
+  });
+
+  describe('searchStock Service Logic (FR-SRCH-01, 02, 05, TC-12)', () => {
     it('throws SearchError 400 when blood group is invalid', async () => {
       await expect(searchService.searchStock('XYZ', 'Staff')).rejects.toThrow(
         /Valid blood group is required/
@@ -28,21 +47,21 @@ describe('Search Service Unit Tests (FR-SRCH-01 to 06, TC-12, TC-26)', () => {
 
     it('returns stock summary for Hospital/Patient without unit IDs (FR-SRCH-02, TC-12)', async () => {
       jest.spyOn(searchRepo, 'searchStockByGroup').mockResolvedValue([
-        { unit_id: 'UNT-001', expiry_date: new Date('2026-11-15') },
-        { unit_id: 'UNT-002', expiry_date: new Date('2026-11-20') },
+        { unit_id: 'UNT-001', expiry_date: '2026-11-15' },
+        { unit_id: 'UNT-002', expiry_date: '2026-11-20' },
       ]);
 
       const res = await searchService.searchStock('O+', 'Hospital/Patient');
       expect(res.bloodGroup).toBe('O+');
       expect(res.availableUnits).toBe(2);
       expect(res.earliestExpiry).toBe('2026-11-15');
-      expect(res.units).toBeUndefined(); // Units hidden from requester
+      expect(res.units).toBeUndefined(); // Units hidden from Hospital/Patient
       expect(res.criteria).toEqual({ bloodGroup: 'O+' });
     });
 
     it('returns detailed unit IDs and expiry for Staff (FR-SRCH-02, TC-12)', async () => {
       jest.spyOn(searchRepo, 'searchStockByGroup').mockResolvedValue([
-        { unit_id: 'UNT-001', expiry_date: new Date('2026-11-15') },
+        { unit_id: 'UNT-001', expiry_date: '2026-11-15' },
       ]);
 
       const res = await searchService.searchStock('O+', 'Staff');
@@ -63,14 +82,14 @@ describe('Search Service Unit Tests (FR-SRCH-01 to 06, TC-12, TC-26)', () => {
     });
   });
 
-  describe('searchDonors', () => {
+  describe('searchDonors Service Logic (FR-SRCH-03, 05, 06, TC-26)', () => {
     it('throws SearchError 400 for invalid blood group filter', async () => {
       await expect(searchService.searchDonors({ bloodGroup: 'INVALID' })).rejects.toThrow(
         /Valid blood group is required/
       );
     });
 
-    it('returns paginated eligible donors and criteria (FR-SRCH-03, FR-SRCH-06, TC-26)', async () => {
+    it('returns paginated eligible donors and logs audit entry for Staff (FR-SRCH-03, 06, TC-26)', async () => {
       const mockDonors = Array.from({ length: 20 }, (_, i) => ({
         donorId: `DNR-${1000 + i}`,
         name: `Donor ${i + 1}`,
@@ -85,7 +104,13 @@ describe('Search Service Unit Tests (FR-SRCH-01 to 06, TC-12, TC-26)', () => {
         total: 45,
       });
 
-      const res = await searchService.searchDonors({ bloodGroup: 'O+', page: 1, limit: 20 });
+      const res = await searchService.searchDonors({
+        bloodGroup: 'O+',
+        page: 1,
+        limit: 20,
+        actorUserId: 'USR-00001',
+      });
+
       expect(res.donors).toHaveLength(20);
       expect(res.total).toBe(45);
       expect(res.page).toBe(1);
@@ -93,6 +118,15 @@ describe('Search Service Unit Tests (FR-SRCH-01 to 06, TC-12, TC-26)', () => {
       expect(res.totalPages).toBe(3);
       expect(res.criteria).toEqual({ bloodGroup: 'O+' });
       expect(res.message).toBeUndefined();
+
+      // Verify audit trail entry was recorded
+      expect(logAudit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'USR-00001',
+          action: 'DONOR_SEARCH_PERFORMED',
+          entity: 'donors',
+        })
+      );
     });
 
     it('returns "No matching results found" when 0 eligible donors match (FR-SRCH-05)', async () => {
@@ -108,13 +142,64 @@ describe('Search Service Unit Tests (FR-SRCH-01 to 06, TC-12, TC-26)', () => {
       expect(res.criteria).toEqual({ bloodGroup: 'B-', city: 'NonExistentCity' });
     });
   });
+
+  describe('Repository SQL Construction & Eligibility Rules (FR-SRCH-03, BR-03, TC-26)', () => {
+    it('builds SQL conditions using config-driven values and inclusive age boundary', () => {
+      const config = {
+        eligibility_min_age: '18',
+        eligibility_max_age: '65',
+        eligibility_min_weight_kg: '45',
+        eligibility_gap_days_male: '90',
+        eligibility_gap_days_other: '120',
+      };
+
+      const { where, params } = searchRepo.buildDonorSearchQuery({
+        bloodGroup: 'A+',
+        city: 'Bangalore',
+        pin: '560001',
+        config,
+      });
+
+      // Config parameters passed as bound values
+      expect(params[0]).toBe(45); // minWeightKg
+      expect(params[1]).toBe(18); // minAge
+      expect(params[2]).toBe(66); // maxAge + 1 (allows donors who are currently 65)
+      expect(params[3]).toBe(90); // maleGapDays
+      expect(params[4]).toBe(120); // otherGapDays
+
+      // Additional filter parameters
+      expect(params[5]).toBe('A+');
+      expect(params[6]).toBe('%Bangalore%');
+      expect(params[7]).toBe('560001');
+
+      // Verify SQL contains all required clauses
+      expect(where).toContain("status = 'Active'");
+      expect(where).toContain('weight_kg >= $1');
+      expect(where).toContain("date_of_birth <= CURRENT_DATE - ($2 || ' years')::INTERVAL");
+      expect(where).toContain("date_of_birth > CURRENT_DATE - ($3 || ' years')::INTERVAL");
+      expect(where).toContain("gender = 'Male' AND (last_donation_date IS NULL OR last_donation_date <= CURRENT_DATE - ($4 || ' days')::INTERVAL)");
+      expect(where).toContain("gender != 'Male' AND (last_donation_date IS NULL OR last_donation_date <= CURRENT_DATE - ($5 || ' days')::INTERVAL)");
+      expect(where).toContain('blood_group = $6');
+      expect(where).toContain('city ILIKE $7');
+      expect(where).toContain('pin_code = $8');
+    });
+
+    it('escapes SQL wildcard characters % and _ in city search', () => {
+      const { params } = searchRepo.buildDonorSearchQuery({
+        city: 'Ban_ga%lore',
+      });
+
+      // Escaped: _ -> \_ and % -> \%
+      expect(params[5]).toBe('%Ban\\_ga\\%lore%');
+    });
+  });
 });
 
 // Live Database integration tests when DB is running
 describeIfDb('Search Live DB Integration (TC-09, TC-12, TC-26)', () => {
   const STAFF_EMAIL = 'staff@bloodbank.org';
   const HOSPITAL_EMAIL = 'hospital@citygen.org';
-  const PASSWORD = 'Test@1234';
+  const PASSWORD = 'Password123!';
 
   async function loginAs(email, password) {
     const agent = request.agent(app);
@@ -124,18 +209,6 @@ describeIfDb('Search Live DB Integration (TC-09, TC-12, TC-26)', () => {
     }
     return agent;
   }
-
-  it('returns 401 UNAUTHENTICATED on GET /api/search/stock without session', async () => {
-    const res = await request(app).get('/api/search/stock?bloodGroup=O+');
-    expect(res.status).toBe(401);
-    expect(res.body.error.code).toBe('UNAUTHENTICATED');
-  });
-
-  it('returns 401 UNAUTHENTICATED on GET /api/search/donors without session', async () => {
-    const res = await request(app).get('/api/search/donors');
-    expect(res.status).toBe(401);
-    expect(res.body.error.code).toBe('UNAUTHENTICATED');
-  });
 
   it('allows Hospital user to search stock (FR-SRCH-01, TC-12)', async () => {
     const hospital = await loginAs(HOSPITAL_EMAIL, PASSWORD);

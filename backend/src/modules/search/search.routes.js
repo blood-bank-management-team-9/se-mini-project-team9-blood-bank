@@ -73,12 +73,14 @@ router.get(
   async (req, res, next) => {
     try {
       const { bloodGroup, city, pin, page, limit } = req.query;
+      const actorUserId = req.session?.user?.userId;
       const result = await searchService.searchDonors({
         bloodGroup,
         city,
         pin,
         page,
         limit,
+        actorUserId,
       });
       return res.status(200).json(result);
     } catch (err) {
