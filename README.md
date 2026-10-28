@@ -370,9 +370,12 @@ Never commit `backend/.env`, `cookies.txt` or `body.json`.
 
 | Document | Location |
 |---|---|
-| SRS v1.1 | [`docs/SRS_bbms.docx.pdf`](docs/SRS_bbms.docx.pdf) |
+| Requirements Traceability Matrix (RTM) | [`docs/RTM.md`](docs/RTM.md) |
+| Architecture Deviations Register | [`docs/DEVIATIONS.md`](docs/DEVIATIONS.md) |
+| Production Nginx TLS Config | [`docs/nginx/bbms.conf`](docs/nginx/bbms.conf) |
+| SRS v1.1 | [`docs/SRS_bbms.pdf`](docs/SRS_bbms.pdf) |
 | SAD v1.0 | [`docs/sad_bbms_09.pdf`](docs/sad_bbms_09.pdf) |
-| STP v1.0 | [`docs/test_plan_bbms.pdf`](docs/test_plan_bbms.pdf) |
+| STP v1.0 | [`docs/BBMS_Software_Test_Plan_v1.0.pdf`](docs/BBMS_Software_Test_Plan_v1.0.pdf) |
 | Backend setup, verification and deviations | [`backend/README.md`](backend/README.md) |
 
 ---
