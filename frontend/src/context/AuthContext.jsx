@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 
-const AuthContext = createContext();
+export const AuthContext = createContext();
 
 // Seed user accounts aligned with ADR-04 and SAD 3.6
 export const DEFAULT_USERS = {
