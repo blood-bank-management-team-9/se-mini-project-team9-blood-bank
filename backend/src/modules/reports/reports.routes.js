@@ -117,7 +117,7 @@ router.get(
       .optional()
       .isIn(['csv', 'pdf', 'CSV', 'PDF'])
       .withMessage('Export format must be "csv" or "pdf"'),
-    ...reportFilterValidators,
+    ...commonValidators,
   ]),
   async (req, res, next) => {
     try {
