@@ -1,8 +1,13 @@
 // C9 Stock Service business logic (SAD 3.4, SRS 5.6); HTTP mapping lives in routes.
+const { withTransaction } = require('../../database/transaction');
+const { logAudit } = require('../audit/audit.repository');
 const repo = require('./stock.repository');
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 const UNIT_STATUSES = ['Available', 'Reserved', 'Issued', 'Expired', 'Discarded'];
+const DISCARD_REASONS = ['Expired', 'Hemolyzed', 'Contaminated', 'Leakage', 'Test Positive'];
+// SAD 4.2 unit states: only these may move to Discarded.
+const DISCARDABLE_STATUSES = ['Available', 'Reserved', 'Expired'];
 const DEFAULT_LOW_STOCK_THRESHOLD = 5;
 const DEFAULT_EXPIRING_SOON_DAYS = 7;
 
@@ -102,10 +107,60 @@ async function listUnits({ bloodGroup, status } = {}) {
   return { units: rows.map((r) => toUnitDto(r, expiringSoonDays)), total: rows.length };
 }
 
+// FR-STK-06, FR-STK-07: discard with mandatory reason, atomic with its audit entry.
+async function discardUnit({ actorUserId, unitId, reason }) {
+  if (!DISCARD_REASONS.includes(reason)) {
+    throw new StockError('VALIDATION_ERROR', 'A valid discard reason is required', 400);
+  }
+  return withTransaction(async (tx) => {
+    const unit = await repo.findUnitForUpdate(tx, unitId);
+    if (!unit) throw new StockError('NOT_FOUND', 'Blood unit not found', 404);
+    if (!DISCARDABLE_STATUSES.includes(unit.status)) {
+      throw new StockError(
+        'INVALID_STATE',
+        `A unit that is ${unit.status} cannot be discarded`,
+        409
+      );
+    }
+    const updated = await repo.markDiscarded(tx, unitId, reason, DISCARDABLE_STATUSES);
+    if (!updated) {
+      throw new StockError('INVALID_STATE', 'Unit state changed; please retry', 409);
+    }
+    // FR-STK-07: the status-guarded UPDATE above prevents double-discard, and derived
+    // counts cannot go negative; allocation is guarded by assertSufficientStock.
+    await logAudit({
+      userId: actorUserId,
+      action: 'UNIT_DISCARDED',
+      entity: 'blood_units',
+      entityId: unitId,
+      originalValue: { status: unit.status },
+      newValue: { status: 'Discarded', reason, staffId: actorUserId },
+    }, tx);
+    return { unitId, status: 'Discarded' };
+  });
+}
+
+// FR-STK-07 guard for allocation (used by the request module): refuses to reserve
+// more units than are Available. Call inside the caller's transaction.
+async function assertSufficientStock(tx, bloodGroup, units) {
+  const available = await repo.countAvailable(tx, bloodGroup);
+  if (units > available) {
+    throw new StockError(
+      'INSUFFICIENT_STOCK',
+      `Only ${available} ${bloodGroup} unit(s) available; ${units} requested`,
+      409
+    );
+  }
+  return available;
+}
+
 module.exports = {
   StockError,
   BLOOD_GROUPS,
   UNIT_STATUSES,
+  DISCARD_REASONS,
   getSummary,
   listUnits,
+  discardUnit,
+  assertSufficientStock,
 };

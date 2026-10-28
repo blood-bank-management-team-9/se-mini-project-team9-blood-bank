@@ -74,6 +74,7 @@ Requirements are traced to the SRS, SAD and Test Plan (see [Documentation](#docu
 | Donor profile management | FR-DON-01 to FR-DON-03, FR-DON-07 | #9 |
 | Donor eligibility engine with config-driven ineligibility reasons | FR-DON-04, FR-DON-05, BR-03 | #10 |
 | Stock summary by group/status, expiry date, low-stock and expiring-soon alerts | FR-STK-01, FR-STK-02, FR-STK-04, FR-STK-05 | #12 |
+| Discard unit with mandatory reason, non-negative stock guard | FR-STK-06, FR-STK-07 | #13 |
 
 Key files live under `backend/src/middleware/`, `backend/src/database/transaction.js`, `backend/src/modules/audit/`, `backend/src/modules/auth/` and `backend/src/modules/admin/`.
 
@@ -86,7 +87,7 @@ Owned by other stories. Do not assume they exist.
 | Password reset | FR-AUTH-05 |
 | Donor donation history and donation workflows | Remaining FR-DON requirements; FR-DNR-01 to FR-DNR-06 |
 | Blood donation recording | FR-DNR-01 to FR-DNR-06 |
-| Blood stock expiry job and discard | FR-STK-03, FR-STK-06, FR-STK-07 |
+| Midnight auto-expiry job | FR-STK-03 |
 | Blood request handling with FEFO | FR-REQ-01 to FR-REQ-08 |
 | Reports | FR-RPT-01 to FR-RPT-06 |
 | UI beyond the health-check page | n/a |
@@ -294,6 +295,7 @@ Base URL: `http://localhost:5000`. Details and conventions are in [`backend/READ
 | `POST` | `/api/auth/logout` | session | Ends the current session and clears the cookie (FR-AUTH-07) |
 | `GET` | `/api/stock/summary` | Staff, Admin | Counts per group x status, low-stock and expiring-soon alerts (FR-STK-01, 04, 05) |
 | `GET` | `/api/stock/units?bloodGroup=&status=` | Staff, Admin | Units, earliest expiry first, with `expiringSoon` tag (FR-STK-01, 02, 05) |
+| `PATCH` | `/api/stock/units/:unitId/discard` | Staff, Admin | Discard with mandatory reason (Expired, Hemolyzed, Contaminated, Leakage, Test Positive); audited (FR-STK-06, 07) |
 | `POST` | `/api/donors` | Staff, Admin | Register and validate a donor (FR-DON-01, FR-DON-02) |
 | `GET` | `/api/donors?status=&bloodGroup=&q=` | Staff, Admin | List and filter donor profiles |
 | `GET` | `/api/donors/{id}` | Staff, Admin | Read a donor profile |
@@ -368,9 +370,12 @@ Never commit `backend/.env`, `cookies.txt` or `body.json`.
 
 | Document | Location |
 |---|---|
-| SRS v1.1 | [`docs/SRS_bbms.docx.pdf`](docs/SRS_bbms.docx.pdf) |
+| Requirements Traceability Matrix (RTM) | [`docs/RTM.md`](docs/RTM.md) |
+| Architecture Deviations Register | [`docs/DEVIATIONS.md`](docs/DEVIATIONS.md) |
+| Production Nginx TLS Config | [`docs/nginx/bbms.conf`](docs/nginx/bbms.conf) |
+| SRS v1.1 | [`docs/SRS_bbms.pdf`](docs/SRS_bbms.pdf) |
 | SAD v1.0 | [`docs/sad_bbms_09.pdf`](docs/sad_bbms_09.pdf) |
-| STP v1.0 | [`docs/test_plan_bbms.pdf`](docs/test_plan_bbms.pdf) |
+| STP v1.0 | [`docs/BBMS_Software_Test_Plan_v1.0.pdf`](docs/BBMS_Software_Test_Plan_v1.0.pdf) |
 | Backend setup, verification and deviations | [`backend/README.md`](backend/README.md) |
 
 ---

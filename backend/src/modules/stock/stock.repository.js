@@ -71,9 +71,42 @@ async function listUnits({ bloodGroup, status } = {}) {
   return rows;
 }
 
+// Row-locks the unit so two staff cannot change it at the same time (ADR-06).
+async function findUnitForUpdate(tx, unitId) {
+  const { rows } = await tx.query(
+    `SELECT unit_id, blood_group, status, expiry_date, discard_reason
+       FROM blood_units WHERE unit_id = $1 FOR UPDATE`,
+    [unitId]
+  );
+  return rows[0] || null;
+}
+
+async function markDiscarded(tx, unitId, reason, allowedStatuses) {
+  const { rows } = await tx.query(
+    `UPDATE blood_units
+        SET status = 'Discarded', discard_reason = $2
+      WHERE unit_id = $1 AND status = ANY($3)
+      RETURNING unit_id, blood_group, status, discard_reason`,
+    [unitId, reason, allowedStatuses]
+  );
+  return rows[0] || null;
+}
+
+async function countAvailable(tx, bloodGroup) {
+  const { rows } = await tx.query(
+    `SELECT COUNT(*)::int AS count FROM blood_units
+      WHERE blood_group = $1 AND status = 'Available' AND expiry_date > CURRENT_DATE`,
+    [bloodGroup]
+  );
+  return rows[0].count;
+}
+
 module.exports = {
   getStockConfig,
   countUnitsByGroupAndStatus,
   countExpiringSoonByGroup,
   listUnits,
+  findUnitForUpdate,
+  markDiscarded,
+  countAvailable,
 };
