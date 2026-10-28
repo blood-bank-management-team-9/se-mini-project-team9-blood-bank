@@ -251,6 +251,48 @@ describe('Reports Service & Route Unit Tests (Offline / Mocked DB)', () => {
       expect(where).toContain("created_at < ($4::date + INTERVAL '1 day')");
     });
   });
+
+  describe('Report Export (FR-RPT-05, TC-10)', () => {
+    it('exports stock report as RFC 4180 CSV string with headers', async () => {
+      jest.spyOn(reportsRepo, 'getStockReport').mockResolvedValue({
+        aggregates: [
+          { bloodGroup: 'O+', available: 3, reserved: 0, issued: 0, expired: 0, discarded: 0, earliestExpiry: '2026-11-05', total: 3 },
+        ],
+        records: [],
+        totalUnits: 3,
+      });
+
+      const file = await reportsService.exportReport('stock', 'csv', {});
+      expect(file.contentType).toBe('text/csv');
+      expect(file.filename).toMatch(/stock-report-.*\.csv/);
+      const csv = file.data.toString('utf8');
+      expect(csv).toContain('Blood Group,Available,Reserved,Issued,Expired,Discarded,Earliest Expiry,Total Units');
+      expect(csv).toContain('O+,3,0,0,0,0,2026-11-05,3');
+    });
+
+    it('exports stock report as valid standard PDF-1.4 binary buffer', async () => {
+      jest.spyOn(reportsRepo, 'getStockReport').mockResolvedValue({
+        aggregates: [
+          { bloodGroup: 'O+', available: 3, reserved: 0, issued: 0, expired: 0, discarded: 0, earliestExpiry: '2026-11-05', total: 3 },
+        ],
+        records: [],
+        totalUnits: 3,
+      });
+
+      const file = await reportsService.exportReport('stock', 'pdf', {});
+      expect(file.contentType).toBe('application/pdf');
+      expect(file.filename).toMatch(/stock-report-.*\.pdf/);
+      expect(Buffer.isBuffer(file.data)).toBe(true);
+      const pdfHeader = file.data.slice(0, 8).toString('utf8');
+      expect(pdfHeader).toContain('%PDF-1.4');
+    });
+
+    it('throws ReportError 400 for unsupported export format', async () => {
+      await expect(
+        reportsService.exportReport('stock', 'docx', {})
+      ).rejects.toThrow(/Export format must be "csv" or "pdf"/);
+    });
+  });
 });
 
 // Live Database integration tests when DB is running
