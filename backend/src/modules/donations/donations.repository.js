@@ -34,6 +34,11 @@ async function updateDonation(tx, donationId, changes) {
   if (keys.length === 0) {
     throw new Error('No changes provided to updateDonation');
   }
+  for (const key of keys) {
+    if (!Object.prototype.hasOwnProperty.call(COLUMNS, key)) {
+      throw new Error(`Unknown column key in updateDonation: ${key}`);
+    }
+  }
   const sets = keys.map((key, i) => `${COLUMNS[key]} = $${i + 2}`);
   const { rows } = await tx.query(
     `UPDATE donations SET ${sets.join(', ')} WHERE donation_id = $1
@@ -56,6 +61,9 @@ async function getShelfLifeDays(tx) {
 
 // FR-DNR-03: expiry = collection date + shelf life, recalculated when the date changes.
 async function updateUnit(tx, donationId, { volumeMl = null, collectionDate = null, shelfLifeDays = null }) {
+  if (collectionDate !== null && !Number.isInteger(shelfLifeDays)) {
+    throw new Error('shelfLifeDays required when collectionDate changes');
+  }
   await tx.query(
     `UPDATE blood_units
         SET volume_ml = COALESCE($2::int, volume_ml),

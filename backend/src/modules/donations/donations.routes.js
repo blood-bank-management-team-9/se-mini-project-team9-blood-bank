@@ -90,6 +90,13 @@ router.put(
       }
       return true;
     }),
+    body().custom((value) => {
+      const hasField = value && ALLOWED_CORRECTION_FIELDS.some((k) => value[k] !== undefined);
+      if (!hasField) {
+        throw new Error('At least one field to correct is required');
+      }
+      return true;
+    }),
     body('volumeMl').optional()
       .custom((v) => donationService.VOLUMES_ML.includes(v))
       .withMessage('Volume must be 350 or 450 ml'),

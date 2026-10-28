@@ -100,7 +100,7 @@ async function correctDonation({ actorUserId, donationId, changes }) {
       if (!gapDays) {
         throw new DonationError(
           'CONFIG_ERROR',
-          'Invalid or missing donor eligibility gap configuration',
+          'Service configuration error',
           500
         );
       }
