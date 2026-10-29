@@ -7,6 +7,11 @@ jest.mock('../audit/audit.repository', () => ({
 jest.mock('./donors.repository', () => ({
   listDonors: jest.fn(),
   findDonorById: jest.fn(),
+  findDonorByUserId: jest.fn(),
+  findDonorAccountById: jest.fn(),
+  findDonorByPhone: jest.fn(),
+  linkDonorToUser: jest.fn(),
+  listDonationHistory: jest.fn(),
   nextDonorId: jest.fn(),
   createDonor: jest.fn(),
   updateDonor: jest.fn(),
@@ -130,6 +135,88 @@ describe('Donor service', () => {
       status: 404,
     });
     expect(repo.getEligibilityConfig).not.toHaveBeenCalled();
+  });
+
+  it('links a donor record matching the authenticated donor account phone', async () => {
+    repo.findDonorByUserId.mockResolvedValue(null);
+    repo.findDonorAccountById.mockResolvedValue({ phone: '9876501234' });
+    repo.findDonorByPhone.mockResolvedValue({ donor_id: 'DNR-00006', user_id: null });
+    repo.linkDonorToUser.mockResolvedValue({ donor_id: 'DNR-00006' });
+
+    await expect(donorService.linkDonorAccount({
+      userId: 'USR-DNR01',
+      role: 'Donor',
+    })).resolves.toEqual({ donorId: 'DNR-00006' });
+
+    expect(repo.findDonorByPhone).toHaveBeenCalledWith('9876501234', expect.any(Object));
+    expect(repo.linkDonorToUser).toHaveBeenCalledWith(
+      expect.any(Object),
+      'DNR-00006',
+      'USR-DNR01'
+    );
+    expect(logAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: 'USR-DNR01',
+        action: 'DONOR_ACCOUNT_LINKED',
+        entityId: 'DNR-00006',
+      }),
+      expect.any(Object)
+    );
+  });
+
+  it('does not link a donor record already claimed by another account', async () => {
+    repo.findDonorByUserId.mockResolvedValue(null);
+    repo.findDonorAccountById.mockResolvedValue({ phone: '9876501234' });
+    repo.findDonorByPhone.mockResolvedValue({
+      donor_id: 'DNR-00006',
+      user_id: 'USR-DNR02',
+    });
+
+    await expect(donorService.linkDonorAccount({
+      userId: 'USR-DNR01',
+      role: 'Donor',
+    })).rejects.toMatchObject({
+      code: 'DONOR_ALREADY_LINKED',
+      status: 409,
+    });
+    expect(repo.linkDonorToUser).not.toHaveBeenCalled();
+    expect(logAudit).not.toHaveBeenCalled();
+  });
+
+  it('returns only donation history belonging to the authenticated linked donor', async () => {
+    repo.findDonorByUserId.mockResolvedValue({ donor_id: 'DNR-00006' });
+    repo.listDonationHistory.mockResolvedValue([{
+      donation_id: 'DON-00000001',
+      collection_date: '2026-10-01',
+      volume_ml: 350,
+      blood_group: 'O+',
+      screening_status: 'Passed',
+      donation_status: 'Recorded',
+    }]);
+
+    await expect(donorService.getOwnDonationHistory('USR-DNR01', 'Donor')).resolves.toEqual({
+      donorId: 'DNR-00006',
+      donations: [{
+        donationId: 'DON-00000001',
+        collectionDate: '2026-10-01',
+        volumeMl: 350,
+        bloodGroup: 'O+',
+        screeningStatus: 'Passed',
+        donationStatus: 'Recorded',
+      }],
+      total: 1,
+    });
+    expect(repo.listDonationHistory).toHaveBeenCalledWith('USR-DNR01');
+  });
+
+  it('does not return a history for an unlinked donor account', async () => {
+    repo.findDonorByUserId.mockResolvedValue(null);
+
+    await expect(donorService.getOwnDonationHistory('USR-DNR01', 'Donor')).rejects.toMatchObject({
+      code: 'DONOR_NOT_LINKED',
+      status: 404,
+    });
+    expect(repo.listDonationHistory).not.toHaveBeenCalled();
   });
 
   it('audits deactivation and reactivation as distinct state changes', async () => {

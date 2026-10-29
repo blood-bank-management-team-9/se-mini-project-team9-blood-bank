@@ -7,18 +7,24 @@ async function runMigrations() {
   const sql = fs.readFileSync(schemaPath, 'utf8');
 
   console.log('Running database migrations from schema.sql...');
-  const client = await pool.connect();
+  let client;
   try {
+    client = await pool.connect();
     await client.query('BEGIN');
     await client.query(sql);
     await client.query('COMMIT');
     console.log('Migrations completed successfully.');
   } catch (err) {
-    await client.query('ROLLBACK');
-    console.error('Migration failed:', err.message);
+    if (client) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (rollbackErr) {
+        console.error('Migration rollback failed:', rollbackErr.message);
+      }
+    }
     throw err;
   } finally {
-    client.release();
+    if (client) client.release();
     await pool.end();
   }
 }
@@ -26,7 +32,10 @@ async function runMigrations() {
 if (require.main === module) {
   runMigrations()
     .then(() => process.exit(0))
-    .catch(() => process.exit(1));
+    .catch((err) => {
+      console.error('Migration failed:', err);
+      process.exit(1);
+    });
 }
 
 module.exports = runMigrations;

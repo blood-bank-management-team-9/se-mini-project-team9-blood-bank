@@ -30,9 +30,9 @@
 | 16 | **FR-DON-03** | Update donor contact & history | C6 Donor Service, C12 Audit | 4.3 `PUT /api/donors/:id` | TC-23 | Implemented (main) | `backend/src/modules/donors/donors.routes.test.js` |
 | 17 | **FR-DON-04** | Donor eligibility engine (age, weight, intervals) | C6 Eligibility Engine, C13 Config | 4.1 Eligibility, 4.2 SD-2 | TC-03 | Implemented (main) | `backend/src/modules/donors/donorEligibility.test.js` |
 | 18 | **FR-DON-05** | Return specific ineligibility reasons & next date | C6 Eligibility Engine | 4.3 `GET /api/donors/:id`, 4.1 | TC-23 | Implemented (main) | `backend/src/modules/donors/donorEligibility.test.js` |
-| 19 | **FR-DON-06** | Donor views own donation history | C6 Donor Service, C3 Filter | 4.3 `GET /api/donors/me/donations` | TC-24 | Planned (Sprint 3) | `backend/src/modules/donors/` |
+| 19 | **FR-DON-06** | Donor views own donation history | C6 Donor Service, C3 Filter | 4.3 `GET /api/donors/me/donations` | TC-24 | Implemented | `backend/src/modules/donors/donors.me.routes.test.js` |
 | 20 | **FR-DON-07** | Deactivate donor record (no hard delete) | C6 Donor Service | 4.3 `PATCH /api/donors/:id/status` | TC-25 | Implemented (main) | `backend/src/modules/donors/donors.routes.test.js` |
-| 21 | **FR-DON-08** | Link donor record to authenticated user account | C6 Donor Service, C4 Auth | 4.3 `GET /api/donors/me/donations` | TC-24 | Planned (Sprint 3) | `backend/src/modules/donors/` |
+| 21 | **FR-DON-08** | Link donor record to authenticated user account | C6 Donor Service, C4 Auth | 4.3 `POST /api/donors/me/link` | TC-24 | Implemented | `backend/src/modules/donors/donors.me.routes.test.js` |
 | 22 | **FR-SRCH-01** | Search available blood stock by group | C7 Search Service | 4.3 `GET /api/search/stock` | TC-12 | In review (PR #48) | `backend/src/modules/search/search.test.js` |
 | 23 | **FR-SRCH-02** | Stock result detail by role (Staff vs Public) | C7 Search Service | 4.3 `GET /api/search/stock` | TC-12 | In review (PR #48) | `backend/src/modules/search/search.test.js` |
 | 24 | **FR-SRCH-03** | Search eligible donors (Staff only) | C7 Search Service, C6 Engine | 4.3 `GET /api/search/donors` | TC-26 | In review (PR #48) | `backend/src/modules/search/search.test.js` |
@@ -100,7 +100,7 @@
 | Sl. | BR ID | Description | Components | Design Reference | STP Test Case | Status | Test / Evidence File |
 |---|---|---|---|---|---|---|---|
 | 74 | **BR-01** | Only Staff add donors/donations; only Admin manages staff/roles | C3 RBAC, C5, C6, C8 | SAD 3.9, 4.3 Access | TC-21, TC-22 | Implemented (main) | `backend/src/modules/admin/admin.test.js` |
-| 75 | **BR-02** | Users view only their own requests / donation history | C3 Filter, C6, C10 | SAD 4.3 `/requests/mine`, `/donors/me` | TC-24, TC-30 | Planned (Sprint 3) | `backend/src/modules/requests/` |
+| 75 | **BR-02** | Users view only their own requests / donation history | C3 Filter, C6, C10 | SAD 4.3 `/requests/mine`, `/donors/me` | TC-24, TC-30 | Implemented for donor history | `backend/src/modules/donors/donors.me.routes.test.js` |
 | 76 | **BR-03** | Ineligible donor cannot donate until next eligible date | C6 Eligibility, C8 | SAD 4.1 Eligibility, 4.2 SD-2 | TC-03, TC-27 | Implemented (main) | `backend/src/modules/donors/donorEligibility.test.js` |
 | 77 | **BR-04** | Earliest-expiry blood unit issued first (FEFO) | C9 Stock, C10 Requests | SAD 4.2 SD-3, 3.5 ADR-06 | TC-08 | Planned (Sprint 3) | `backend/src/modules/requests/` |
 | 78 | **BR-05** | Urgent requests processed before Normal requests | C10 Request Service | SAD 4.3 `GET /api/requests/pending` | TC-14 | Planned (Sprint 3) | `backend/src/modules/requests/` |
