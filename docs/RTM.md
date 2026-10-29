@@ -52,14 +52,14 @@
 | 38 | **FR-STK-05** | Trigger Expiring-Soon alerts (within 7 days) | C9 Stock Service, C1 Frontend | 4.3 `GET /api/stock/units`, 4.5 | TC-28 | Implemented (main) | `backend/src/modules/stock/stock.service.test.js` |
 | 39 | **FR-STK-06** | Manually discard damaged/unsafe unit with reason | C9 Stock Service, C12 Audit | 4.3 `PATCH .../discard` | TC-29 | Implemented (main) | `backend/src/modules/stock/stock.discard.test.js` |
 | 40 | **FR-STK-07** | Derived stock counts prevent negative balance | C9 Stock Service, C16 Transactions | 3.5 ADR-06, 3.6, 4.2 SD-3 | TC-29 | Implemented (main) | `backend/src/modules/stock/stock.discard.test.js` |
-| 41 | **FR-REQ-01** | Submit blood request (Hospital/Patient) | C10 Request Service | 4.3 `POST /api/requests` | TC-30 | Planned (Sprint 3) | `backend/src/modules/requests/` |
-| 42 | **FR-REQ-02** | Validate blood request parameters | C10 Request Service, C3 Validation | 4.3 `POST /api/requests` (400) | TC-13 | Planned (Sprint 3) | `backend/src/modules/requests/` |
-| 43 | **FR-REQ-03** | Assign Request ID and set initial Pending state | C10 Request Service | 4.3 `POST /api/requests`, 4.1 | TC-30 | Planned (Sprint 3) | `backend/src/modules/requests/` |
+| 41 | **FR-REQ-01** | Submit blood request (Hospital/Patient) | C10 Request Service | 4.3 `POST /api/requests` | TC-30 | Implemented | `backend/src/modules/requests/requests.test.js` |
+| 42 | **FR-REQ-02** | Validate blood request parameters | C10 Request Service, C3 Validation | 4.3 `POST /api/requests` (400) | TC-13 | Implemented | `backend/src/modules/requests/requests.routes.test.js` |
+| 43 | **FR-REQ-03** | Assign Request ID and set initial Pending state | C10 Request Service | 4.3 `POST /api/requests`, 4.1 | TC-30 | Implemented | `backend/src/modules/requests/requests.test.js` |
 | 44 | **FR-REQ-04** | Prioritize queue: Urgent before Normal, then FIFO | C10 Request Service | 4.3 `GET /api/requests/pending` | TC-14 | Planned (Sprint 3) | `backend/src/modules/requests/` |
 | 45 | **FR-REQ-05** | Staff approve request and reserve units (FEFO) | C10 Request Service, C9 Stock | 4.2 SD-3, 4.3 `.../approve` | TC-08 | Planned (Sprint 3) | `backend/src/modules/requests/` |
 | 46 | **FR-REQ-06** | Staff reject request with mandatory reason | C10 Request Service, C12 Audit | 4.3 `.../reject` | TC-31 | Planned (Sprint 3) | `backend/src/modules/requests/` |
 | 47 | **FR-REQ-07** | Issue reserved units and record dispatch | C10 Request Service, C9 Stock | 4.3 `.../issue` | TC-15 | Planned (Sprint 3) | `backend/src/modules/requests/` |
-| 48 | **FR-REQ-08** | Requester track status and cancel pending request | C10 Request Service | 4.3 `GET /requests/mine`, `PATCH .../cancel` | TC-30 | Planned (Sprint 3) | `backend/src/modules/requests/` |
+| 48 | **FR-REQ-08** | Requester track status and cancel pending request | C10 Request Service | 4.3 `GET /requests/mine`, `PATCH .../cancel` | TC-30 | Implemented | `backend/src/modules/requests/requests.test.js` |
 | 49 | **FR-RPT-01** | Stock summary by blood group with optional status filter | C11 Report Service | 4.3 `GET /api/reports/stock` | TC-10 | In review (PR #50) | `backend/src/modules/reports/reports.test.js` |
 | 50 | **FR-RPT-02** | Donation report by date range, blood group, status | C11 Report Service | 4.3 `GET /api/reports/donation` | TC-32 | In review (PR #50) | `backend/src/modules/reports/reports.test.js` |
 | 51 | **FR-RPT-03** | Blood request history with request and decision timestamps | C11 Report Service | 4.3 `GET /api/reports/request` | TC-32 | In review (PR #50) | `backend/src/modules/reports/reports.test.js` |
@@ -100,7 +100,7 @@
 | Sl. | BR ID | Description | Components | Design Reference | STP Test Case | Status | Test / Evidence File |
 |---|---|---|---|---|---|---|---|
 | 74 | **BR-01** | Only Staff add donors/donations; only Admin manages staff/roles | C3 RBAC, C5, C6, C8 | SAD 3.9, 4.3 Access | TC-21, TC-22 | Implemented (main) | `backend/src/modules/admin/admin.test.js` |
-| 75 | **BR-02** | Users view only their own requests / donation history | C3 Filter, C6, C10 | SAD 4.3 `/requests/mine`, `/donors/me` | TC-24, TC-30 | Planned (Sprint 3) | `backend/src/modules/requests/` |
+| 75 | **BR-02** | Users view only their own requests / donation history | C3 Filter, C6, C10 | SAD 4.3 `/requests/mine`, `/donors/me` | TC-24, TC-30 | Implemented for request history | `backend/src/modules/requests/requests.test.js` |
 | 76 | **BR-03** | Ineligible donor cannot donate until next eligible date | C6 Eligibility, C8 | SAD 4.1 Eligibility, 4.2 SD-2 | TC-03, TC-27 | Implemented (main) | `backend/src/modules/donors/donorEligibility.test.js` |
 | 77 | **BR-04** | Earliest-expiry blood unit issued first (FEFO) | C9 Stock, C10 Requests | SAD 4.2 SD-3, 3.5 ADR-06 | TC-08 | Planned (Sprint 3) | `backend/src/modules/requests/` |
 | 78 | **BR-05** | Urgent requests processed before Normal requests | C10 Request Service | SAD 4.3 `GET /api/requests/pending` | TC-14 | Planned (Sprint 3) | `backend/src/modules/requests/` |
