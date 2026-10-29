@@ -385,8 +385,8 @@ Never commit `backend/.env`, `cookies.txt` or `body.json`.
 | Role | Name | SRN |
 |---|---|---|
 | Product Owner | Harsimran Kaur | PES1UG24CS187 |
-| Developer | Gautam Prasanth Nair | PES1UG24CS169 |
 | QA Lead | Dheepak Seetharam | PES1UG24CS152 |
 | Test Engineer | Chukkapalli Rohan | PES1UG24CS135 |
+| Developer | Gautam Prasanth Nair | PES1UG24CS169 |
 
 PES University, Bangalore. Software Engineering (UE24CS341A), Section C, Team 9.
