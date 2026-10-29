@@ -299,7 +299,7 @@ describe('Reports Service & Route Unit Tests (Offline / Mocked DB)', () => {
 describeIfDb('Reports Live DB Integration (TC-09, TC-10, TC-32)', () => {
   const STAFF_EMAIL = 'staff@bloodbank.org';
   const HOSPITAL_EMAIL = 'hospital@citygen.org';
-  const PASSWORD = 'Password123!';
+  const PASSWORD = 'Test@1234';
 
   async function loginAs(email, password) {
     const agent = request.agent(app);
@@ -327,7 +327,7 @@ describeIfDb('Reports Live DB Integration (TC-09, TC-10, TC-32)', () => {
 
   it('allows Staff to generate stock, donation, and request reports (FR-RPT-01..03, TC-10, TC-32)', async () => {
     const staff = await loginAs(STAFF_EMAIL, PASSWORD);
-    const stockRes = await staff.get('/api/reports/stock?bloodGroup=O+');
+    const stockRes = await staff.get('/api/reports/stock?bloodGroup=O%2B');
     expect(stockRes.status).toBe(200);
     expect(stockRes.body.reportType).toBe('stock');
 
