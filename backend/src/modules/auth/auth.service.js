@@ -2,6 +2,7 @@
 // Business rules only; HTTP mapping lives in the route layer.
 
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const { withTransaction } = require('../../database/transaction');
 const { logAudit } = require('../audit/audit.repository');
 const repo = require('./auth.repository');
@@ -95,7 +96,10 @@ function maskEmail(email) {
 
   return `${email[0]}***${email.slice(atIndex)}`;
 }
-
+function maskPhone(phone) {
+  if (typeof phone !== 'string' || phone.length < 4) return '***';
+  return `***${phone.slice(-4)}`;
+}
 async function login({ email, password, session }) {
   const user = await repo.findByEmailForLogin(email);
 
@@ -252,5 +256,169 @@ async function logout(session) {
     session.destroy((err) => (err ? reject(err) : resolve()));
   });
 }
+// ---------------------------------------------------------------------------
+// Password reset (FR-AUTH-05) — token is SHA-256-hashed before storage.
+// The raw token is returned to the caller in the response body.
+// EMAIL IS NOT SENT (dev-only; see PR deviation). Real SMTP is a follow-up.
+// ---------------------------------------------------------------------------
 
-module.exports = { register, login, logout, AuthError };
+const RESET_TOKEN_TTL_MINUTES = 15;
+
+function hashToken(rawToken) {
+  return crypto.createHash('sha256').update(rawToken).digest('hex');
+}
+
+async function requestPasswordReset({ email }) {
+  const user = await repo.findByEmail(email);
+  if (!user) {
+    // Do not reveal whether the email is registered.
+    // Return a generic response — same shape as success — so an attacker
+    // cannot use this endpoint to enumerate accounts.
+    return { message: 'If the email is registered, a reset link has been generated.' };
+  }
+
+  const rawToken = crypto.randomBytes(32).toString('hex');
+  const tokenHash = hashToken(rawToken);
+  const expiresAt = new Date(Date.now() + RESET_TOKEN_TTL_MINUTES * 60 * 1000);
+
+  await withTransaction(async (tx) => {
+    await repo.createResetToken(tx, {
+      tokenHash,
+      userId: user.user_id,
+      expiresAt,
+    });
+    await logAudit(
+      {
+        userId: user.user_id,
+        action: 'PASSWORD_RESET_REQUESTED',
+        entity: 'users',
+        entityId: user.user_id,
+        newValue: { expires_at: expiresAt.toISOString() },
+      },
+      tx
+    );
+  });
+
+  // DEV ONLY: return the raw token so the frontend / test can use it.
+  // In production this must be sent by email and NOT returned.
+  return {
+    message: 'If the email is registered, a reset link has been generated.',
+    resetToken: rawToken,
+    expiresAt: expiresAt.toISOString(),
+    resetUrl: `/reset-password?token=${rawToken}`,
+  };
+}
+
+async function resetPassword({ token, newPassword }) {
+  if (typeof token !== 'string' || token.length === 0) {
+    throw new AuthError('VALIDATION_ERROR', 'Token is required', 400);
+  }
+
+  const tokenHash = hashToken(token);
+
+  return withTransaction(async (tx) => {
+    const record = await repo.findResetTokenByHash(tokenHash, tx);
+    if (!record) {
+      throw new AuthError('INVALID_TOKEN', 'Reset link is invalid', 400);
+    }
+    if (record.used_at) {
+      throw new AuthError('TOKEN_ALREADY_USED', 'Reset link has already been used', 400);
+    }
+    if (new Date(record.expires_at) <= new Date()) {
+      throw new AuthError('TOKEN_EXPIRED', 'Reset link has expired', 400);
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+    await repo.updateUserPassword(record.user_id, passwordHash, tx);
+    await repo.markResetTokenUsed(tokenHash, tx);
+    await logAudit(
+      {
+        userId: record.user_id,
+        action: 'PASSWORD_RESET_COMPLETED',
+        entity: 'users',
+        entityId: record.user_id,
+        newValue: { reset_at: new Date().toISOString() },
+      },
+      tx
+    );
+
+    return { message: 'Password reset successfully' };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Profile (FR-AUTH-06) — Donor and Hospital/Patient only.
+// ---------------------------------------------------------------------------
+
+const PROFILE_ALLOWED_ROLES = ['Donor', 'Hospital/Patient'];
+
+function ensureProfileRole(role) {
+  if (!PROFILE_ALLOWED_ROLES.includes(role)) {
+    throw new AuthError(
+      'ACCESS_DENIED',
+      'Profile management is available only to Donor and Hospital/Patient users',
+      403
+    );
+  }
+}
+
+async function getProfile(userId, role) {
+  ensureProfileRole(role);
+  const profile = await repo.getProfile(userId);
+  if (!profile) {
+    throw new AuthError('NOT_FOUND', 'User not found', 404);
+  }
+  return {
+    userId: profile.user_id,
+    name: profile.name,
+    email: profile.email,
+    phone: profile.phone,
+    address: profile.address,
+    role: profile.role,
+    status: profile.status,
+  };
+}
+
+async function updateProfile({ userId, role, name, phone, address }) {
+  ensureProfileRole(role);
+
+  if (phone) {
+    const other = await repo.findOtherUserByPhone(phone, userId);
+    if (other) {
+      throw new AuthError('ACCOUNT_EXISTS', 'Phone number is already in use', 409);
+    }
+  }
+
+  const updated = await repo.updateProfile(userId, { name, phone, address });
+  if (!updated) {
+    throw new AuthError('NOT_FOUND', 'User not found', 404);
+  }
+
+  await logAudit({
+    userId,
+    action: 'PROFILE_UPDATED',
+    entity: 'users',
+    entityId: userId,
+    newValue: { name: updated.name, phone_masked: maskPhone(updated.phone) },
+  });
+
+  return {
+    userId: updated.user_id,
+    name: updated.name,
+    email: updated.email,
+    phone: updated.phone,
+    address: updated.address,
+    role: updated.role,
+    status: updated.status,
+  };
+}
+module.exports = {
+  register,
+  login,
+  logout,
+  requestPasswordReset,
+  resetPassword,
+  getProfile,
+  updateProfile,
+  AuthError,
+};

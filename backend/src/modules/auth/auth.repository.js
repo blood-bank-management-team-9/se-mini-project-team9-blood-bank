@@ -113,15 +113,100 @@ async function clearExpiredLock(userId) {
     [userId]
   );
 }
+// ---------------------------------------------------------------------------
+// Password reset + profile (issue #14: FR-AUTH-05, FR-AUTH-06)
+// ---------------------------------------------------------------------------
+
+async function createResetToken(tx, { tokenHash, userId, expiresAt }) {
+  await tx.query(
+    `DELETE FROM password_reset_tokens
+      WHERE user_id = $1 AND used_at IS NULL`,
+    [userId]
+  );
+  await tx.query(
+    `INSERT INTO password_reset_tokens (token_hash, user_id, expires_at)
+     VALUES ($1, $2, $3)`,
+    [tokenHash, userId, expiresAt]
+  );
+}
+
+async function findResetTokenByHash(tokenHash, tx = null) {
+  const runner = tx ? tx.query.bind(tx) : query;
+  const { rows } = await runner(
+    `SELECT token_hash, user_id, expires_at, used_at
+       FROM password_reset_tokens
+      WHERE token_hash = $1`,
+    [tokenHash]
+  );
+  return rows[0] || null;
+}
+
+async function markResetTokenUsed(tokenHash, tx) {
+  await tx.query(
+    `UPDATE password_reset_tokens
+        SET used_at = NOW()
+      WHERE token_hash = $1`,
+    [tokenHash]
+  );
+}
+
+async function updateUserPassword(userId, passwordHash, tx) {
+  await tx.query(
+    `UPDATE users
+        SET password_hash = $2,
+            failed_count = 0,
+            locked_until = NULL
+      WHERE user_id = $1`,
+    [userId, passwordHash]
+  );
+}
+async function getProfile(userId) {
+  const { rows } = await query(
+    `SELECT user_id, name, email, phone, address, role, status
+       FROM users
+      WHERE user_id = $1`,
+    [userId]
+  );
+  return rows[0] || null;
+}
+async function updateProfile(userId, { name, phone, address }) {
+  const { rows } = await query(
+    `UPDATE users
+        SET name = $2,
+            phone = $3,
+            address = $4
+      WHERE user_id = $1
+      RETURNING user_id, name, email, phone, address, role, status`,
+    [userId, name, phone, address]
+  );
+  return rows[0] || null;
+}
+
+async function findOtherUserByPhone(phone, excludeUserId) {
+  const { rows } = await query(
+    `SELECT user_id FROM users WHERE phone = $1 AND user_id <> $2`,
+    [phone, excludeUserId]
+  );
+  return rows[0] || null;
+}
+
 module.exports = {
+  // Existing (from #5, #6)
   findByEmail,
   findByPhone,
   maxSequenceForPrefix,
   insertUser,
-  // Login / lockout (issue #6)
   findByEmailForLogin,
   incrementFailedCount,
   lockAccount,
   resetLoginFailures,
   clearExpiredLock,
+  // New (issue #14)
+  createResetToken,
+  findResetTokenByHash,
+  markResetTokenUsed,
+  updateUserPassword,
+  getProfile,
+  updateProfile,
+  findOtherUserByPhone,
 };

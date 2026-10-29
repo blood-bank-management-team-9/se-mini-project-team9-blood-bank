@@ -1,4 +1,5 @@
-﻿// NFR-SEC-04 (session) + NFR-SEC-02 (RBAC) + NFR-SEC-05 (validation) â€” minimal proof routes.
+﻿
+// NFR-SEC-04 (session) + NFR-SEC-02 (RBAC) + NFR-SEC-05 (validation) — minimal proof routes.
 const router = require('express').Router();
 const { body } = require('express-validator');
 const { requireRole } = require('../../middleware/rbac');
@@ -22,22 +23,163 @@ router.get('/csrf', (req, res, next) => {
   }
 });
 
-// Any logged-in user can read own session.
-router.get('/me', (req, res) => {
+// GET /api/auth/me — FR-AUTH-06. Returns the full DB-backed profile.
+// Replaces the previous demo /me (which returned only the session user).
+router.get('/me', async (req, res, next) => {
   if (!req.session || !req.session.user) {
     return res.status(401).json({
-      error: { code: 'UNAUTHENTICATED', message: 'Not logged in', requestId: req.id },
+      error: {
+        code: 'UNAUTHENTICATED',
+        message: 'Not logged in',
+        requestId: req.id,
+      },
     });
   }
-  return res.json({ user: req.session.user });
+  try {
+    const profile = await authService.getProfile(
+      req.session.user.userId,
+      req.session.user.role
+    );
+    return res.status(200).json(profile);
+  } catch (err) {
+    if (err instanceof authService.AuthError) {
+      return res.status(err.status).json({
+        error: {
+          code: err.code,
+          message: err.publicMessage,
+          requestId: req.id,
+        },
+      });
+    }
+    return next(err);
+  }
 });
 
-// Staff-only demo route â€” proves RBAC works end-to-end (TC-09 pattern).
+// PUT /api/auth/me — FR-AUTH-06. Update name, phone, address.
+// Donor and Hospital/Patient only.
+router.put(
+  '/me',
+  validate([
+    body('name')
+      .isLength({ min: 1, max: 60 })
+      .withMessage('Name is required (1-60 characters)')
+      .trim()
+      .escape(),
+    body('phone')
+      .isLength({ min: 10, max: 10 })
+      .withMessage('Phone must be exactly 10 digits')
+      .isNumeric()
+      .withMessage('Phone must contain only digits'),
+    body('address')
+      .optional({ checkFalsy: true })
+      .isLength({ max: 120 })
+      .withMessage('Address cannot exceed 120 characters')
+      .trim(),
+  ]),
+  async (req, res, next) => {
+    if (!req.session || !req.session.user) {
+      return res.status(401).json({
+        error: {
+          code: 'UNAUTHENTICATED',
+          message: 'Not logged in',
+          requestId: req.id,
+        },
+      });
+    }
+    try {
+      const updated = await authService.updateProfile({
+        userId: req.session.user.userId,
+        role: req.session.user.role,
+        name: req.body.name,
+        phone: req.body.phone,
+        address: req.body.address,
+      });
+      return res.status(200).json(updated);
+    } catch (err) {
+      if (err instanceof authService.AuthError) {
+        return res.status(err.status).json({
+          error: {
+            code: err.code,
+            message: err.publicMessage,
+            requestId: req.id,
+          },
+        });
+      }
+      return next(err);
+    }
+  }
+);
+
+// POST /api/auth/forgot-password — FR-AUTH-05. Public.
+// DEV: returns the reset token in the response body (no email). See PR deviation.
+router.post(
+  '/forgot-password',
+  validate([
+    body('email').isEmail().withMessage('Valid email is required').normalizeEmail(),
+  ]),
+  async (req, res, next) => {
+    try {
+      const result = await authService.requestPasswordReset({ email: req.body.email });
+      return res.status(200).json(result);
+    } catch (err) {
+      if (err instanceof authService.AuthError) {
+        return res.status(err.status).json({
+          error: {
+            code: err.code,
+            message: err.publicMessage,
+            requestId: req.id,
+          },
+        });
+      }
+      return next(err);
+    }
+  }
+);
+
+// POST /api/auth/reset-password — FR-AUTH-05. Public.
+// Body: { token, newPassword }
+router.post(
+  '/reset-password',
+  validate([
+    body('token').isString().isLength({ min: 1 }).withMessage('Token is required'),
+    body('newPassword')
+      .isLength({ min: 8 })
+      .withMessage('Password must be at least 8 characters')
+      .matches(/[A-Z]/)
+      .withMessage('Password must contain an uppercase letter')
+      .matches(/[a-z]/)
+      .withMessage('Password must contain a lowercase letter')
+      .matches(/[0-9]/)
+      .withMessage('Password must contain a digit'),
+  ]),
+  async (req, res, next) => {
+    try {
+      const result = await authService.resetPassword({
+        token: req.body.token,
+        newPassword: req.body.newPassword,
+      });
+      return res.status(200).json(result);
+    } catch (err) {
+      if (err instanceof authService.AuthError) {
+        return res.status(err.status).json({
+          error: {
+            code: err.code,
+            message: err.publicMessage,
+            requestId: req.id,
+          },
+        });
+      }
+      return next(err);
+    }
+  }
+);
+
+// Staff-only demo route — proves RBAC works end-to-end (TC-09 pattern).
 router.get('/staff-only', requireRole('Staff'), (req, res) => {
   res.json({ ok: true, user: req.session.user });
 });
 
-// Validation demo â€” proves NFR-SEC-05 + parameterised query path.
+// Validation demo — proves NFR-SEC-05 + parameterised query path.
 router.post(
   '/demo-validate',
   validate([
@@ -97,7 +239,8 @@ if (process.env.NODE_ENV !== 'production') {
     req.session.destroy(() => res.json({ ok: true }));
   });
 }
-// POST /api/auth/register â€” SAD 4.3, FR-AUTH-01, FR-AUTH-02, NFR-SEC-01
+
+// POST /api/auth/register — SAD 4.3, FR-AUTH-01, FR-AUTH-02, NFR-SEC-01
 router.post(
   '/register',
   validate([
@@ -147,7 +290,8 @@ router.post(
     }
   }
 );
-// POST /api/auth/login â€” SAD 4.3, SD-1, FR-AUTH-03, FR-AUTH-04
+
+// POST /api/auth/login — SAD 4.3, SD-1, FR-AUTH-03, FR-AUTH-04
 router.post(
   '/login',
   validate([
@@ -182,7 +326,7 @@ router.post(
   }
 );
 
-// POST /api/auth/logout â€” FR-AUTH-07
+// POST /api/auth/logout — FR-AUTH-07
 router.post('/logout', (req, res, next) => {
   if (!req.session || !req.session.user) {
     return res.status(401).json({
@@ -201,4 +345,5 @@ router.post('/logout', (req, res, next) => {
     })
     .catch(next);
 });
+
 module.exports = router;
