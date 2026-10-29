@@ -30,9 +30,9 @@
 | 16 | **FR-DON-03** | Update donor contact & history | C6 Donor Service, C12 Audit | 4.3 `PUT /api/donors/:id` | TC-23 | Implemented (main) | `backend/src/modules/donors/donors.routes.test.js` |
 | 17 | **FR-DON-04** | Donor eligibility engine (age, weight, intervals) | C6 Eligibility Engine, C13 Config | 4.1 Eligibility, 4.2 SD-2 | TC-03 | Implemented (main) | `backend/src/modules/donors/donorEligibility.test.js` |
 | 18 | **FR-DON-05** | Return specific ineligibility reasons & next date | C6 Eligibility Engine | 4.3 `GET /api/donors/:id`, 4.1 | TC-23 | Implemented (main) | `backend/src/modules/donors/donorEligibility.test.js` |
-| 19 | **FR-DON-06** | Donor views own donation history | C6 Donor Service, C3 Filter | 4.3 `GET /api/donors/me/donations` | TC-24 | Planned (Sprint 3) | `backend/src/modules/donors/` |
+| 19 | **FR-DON-06** | Donor views own donation history | C6 Donor Service, C3 Filter | 4.3 `GET /api/donors/me/donations` | TC-24 | Implemented | `backend/src/modules/donors/donors.me.routes.test.js` |
 | 20 | **FR-DON-07** | Deactivate donor record (no hard delete) | C6 Donor Service | 4.3 `PATCH /api/donors/:id/status` | TC-25 | Implemented (main) | `backend/src/modules/donors/donors.routes.test.js` |
-| 21 | **FR-DON-08** | Link donor record to authenticated user account | C6 Donor Service, C4 Auth | 4.3 `GET /api/donors/me/donations` | TC-24 | Planned (Sprint 3) | `backend/src/modules/donors/` |
+| 21 | **FR-DON-08** | Link donor record to authenticated user account | C6 Donor Service, C4 Auth | 4.3 `POST /api/donors/me/link` | TC-24 | Implemented | `backend/src/modules/donors/donors.me.routes.test.js` |
 | 22 | **FR-SRCH-01** | Search available blood stock by group | C7 Search Service | 4.3 `GET /api/search/stock` | TC-12 | In review (PR #48) | `backend/src/modules/search/search.test.js` |
 | 23 | **FR-SRCH-02** | Stock result detail by role (Staff vs Public) | C7 Search Service | 4.3 `GET /api/search/stock` | TC-12 | In review (PR #48) | `backend/src/modules/search/search.test.js` |
 | 24 | **FR-SRCH-03** | Search eligible donors (Staff only) | C7 Search Service, C6 Engine | 4.3 `GET /api/search/donors` | TC-26 | In review (PR #48) | `backend/src/modules/search/search.test.js` |
@@ -77,8 +77,8 @@
 | 56 | **NFR-PERF-02** | Page load time < 3s under standard broadband | C1 Client, C2 Nginx | SAD 4.5 UX, 4.4 Monitoring | TC-19 | In review (PR #52) | `docs/BROWSER_COMPATIBILITY.md` |
 | 57 | **NFR-PERF-03** | Support 50 concurrent logged-in users under 3s SLA | C3, C16 Connection Pool | SAD 3.6, 4.4 Monitoring | TC-17 | In review (PR #52) | `backend/src/middleware/nfr.test.js` |
 | 58 | **NFR-PERF-04** | Generate reports up to 12 months in < 10s (500 row cap) | C11 Reports, C17 Indexes | SAD 4.3, 3.6 Indexes | TC-32 | In review (PR #50) | `backend/src/modules/reports/reports.service.js` |
-| 59 | **NFR-SAF-01** | Never issue Expired, Discarded or reserved unit | C9 Stock, C10 Requests | SAD 3.5 ADR-05, 4.1 Unit States | TC-06, TC-15 | Planned (Sprint 3) | `backend/src/modules/requests/` |
-| 60 | **NFR-SAF-02** | Confirm recipient blood group match on issue | C10 Requests, C1 Frontend | SAD 4.3 `.../issue` confirmMatch | TC-15 | Planned (Sprint 3) | `backend/src/modules/requests/` |
+| 59 | **NFR-SAF-01** | Never issue Expired, Discarded or reserved unit | C9 Stock, C10 Requests | SAD 3.5 ADR-05, 4.1 Unit States | TC-06, TC-15 | Implemented | `backend/src/modules/requests/requests.test.js` |
+| 60 | **NFR-SAF-02** | Confirm recipient blood group match on issue | C10 Requests, C1 Frontend | SAD 4.3 `.../issue` confirmMatch | TC-15 | Implemented | `backend/src/modules/requests/requests.test.js` |
 | 61 | **NFR-SAF-03** | Daily automated database backup with 30d retention | C15 Scheduler, pg_dump | SAD 3.6 Infrastructure, 3.7 | TC-34 | Planned (Sprint 3) | `backend/src/jobs/backup.js` |
 | 62 | **NFR-SEC-01** | Passwords hashed with bcrypt (>= 10 rounds) | C4 Auth Service | SAD 3.9 STRIDE, 4.1 Security | TC-01 | Implemented (main) | `backend/src/modules/auth/auth.register.test.js` |
 | 63 | **NFR-SEC-02** | RBAC server-side enforcement on all protected routes | C3 RBAC Middleware | SAD 3.9 STRIDE, 4.4 Errors | TC-09 | Implemented (main) | `backend/src/modules/auth/auth.rbac.test.js` |
@@ -102,6 +102,6 @@
 | 74 | **BR-01** | Only Staff add donors/donations; only Admin manages staff/roles | C3 RBAC, C5, C6, C8 | SAD 3.9, 4.3 Access | TC-21, TC-22 | Implemented (main) | `backend/src/modules/admin/admin.test.js` |
 | 75 | **BR-02** | Users view only their own requests / donation history | C3 Filter, C6, C10 | SAD 4.3 `/requests/mine`, `/donors/me` | TC-24, TC-30 | Implemented for request history | `backend/src/modules/requests/requests.test.js` |
 | 76 | **BR-03** | Ineligible donor cannot donate until next eligible date | C6 Eligibility, C8 | SAD 4.1 Eligibility, 4.2 SD-2 | TC-03, TC-27 | Implemented (main) | `backend/src/modules/donors/donorEligibility.test.js` |
-| 77 | **BR-04** | Earliest-expiry blood unit issued first (FEFO) | C9 Stock, C10 Requests | SAD 4.2 SD-3, 3.5 ADR-06 | TC-08 | Planned (Sprint 3) | `backend/src/modules/requests/` |
-| 78 | **BR-05** | Urgent requests processed before Normal requests | C10 Request Service | SAD 4.3 `GET /api/requests/pending` | TC-14 | Planned (Sprint 3) | `backend/src/modules/requests/` |
-| 79 | **BR-06** | Only Staff approve or reject blood requests | C3 RBAC, C10 Requests | SAD 4.2 SD-3, 4.3 `.../approve`, `.../reject` | TC-31 | Planned (Sprint 3) | `backend/src/modules/requests/` |
+| 77 | **BR-04** | Earliest-expiry blood unit issued first (FEFO) | C9 Stock, C10 Requests | SAD 4.2 SD-3, 3.5 ADR-06 | TC-08 | Implemented | `backend/src/modules/requests/requests.test.js` |
+| 78 | **BR-05** | Urgent requests processed before Normal requests | C10 Request Service | SAD 4.3 `GET /api/requests/pending` | TC-14 | Implemented | `backend/src/modules/requests/requests.test.js` |
+| 79 | **BR-06** | Only Staff approve or reject blood requests | C3 RBAC, C10 Requests | SAD 4.2 SD-3, 4.3 `.../approve`, `.../reject` | TC-31 | Implemented | `backend/src/modules/requests/requests.routes.test.js` |

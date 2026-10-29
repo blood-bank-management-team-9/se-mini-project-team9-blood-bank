@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS users (
 -- 2. Donors table (SRS B.2, SAD 3.6)
 CREATE TABLE IF NOT EXISTS donors (
     donor_id VARCHAR(10) PRIMARY KEY,
+    user_id VARCHAR(10) UNIQUE REFERENCES users(user_id) ON DELETE SET NULL,
     full_name VARCHAR(60) NOT NULL,
     date_of_birth DATE NOT NULL,
     gender VARCHAR(10) NOT NULL CHECK (gender IN ('Male', 'Female', 'Other')),
@@ -139,3 +140,4 @@ CREATE INDEX IF NOT EXISTS idx_blood_requests_dates ON blood_requests (created_a
 -- Migration (issue #14): add users.address for FR-AUTH-06 profile update.
 -- Idempotent: safe to run on databases that already have the column.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS address VARCHAR(120);
+ALTER TABLE donors ADD COLUMN IF NOT EXISTS user_id VARCHAR(10) UNIQUE REFERENCES users(user_id) ON DELETE SET NULL;

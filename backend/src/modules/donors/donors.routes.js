@@ -1,4 +1,4 @@
-// C6 Donor Management API (SAD 4.3 /api/donors, FR-DON-01/02/03/07).
+// C6 Donor API (SAD 4.3 /api/donors, FR-DON-01/02/03/06/07/08).
 const router = require('express').Router();
 const { body, param, query: queryValidator } = require('express-validator');
 const { requireRole } = require('../../middleware/rbac');
@@ -90,6 +90,38 @@ router.get(
         bloodGroup: req.query.bloodGroup,
         q: req.query.q,
       });
+      return res.status(200).json(result);
+    } catch (err) {
+      return handleDonorError(err, req, res, next);
+    }
+  }
+);
+
+router.post(
+  '/me/link',
+  requireRole('Donor'),
+  async (req, res, next) => {
+    try {
+      const result = await donorService.linkDonorAccount({
+        userId: req.session.user.userId,
+        role: req.session.user.role,
+      });
+      return res.status(200).json(result);
+    } catch (err) {
+      return handleDonorError(err, req, res, next);
+    }
+  }
+);
+
+router.get(
+  '/me/donations',
+  requireRole('Donor'),
+  async (req, res, next) => {
+    try {
+      const result = await donorService.getOwnDonationHistory(
+        req.session.user.userId,
+        req.session.user.role
+      );
       return res.status(200).json(result);
     } catch (err) {
       return handleDonorError(err, req, res, next);
