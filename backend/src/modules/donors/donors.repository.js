@@ -48,6 +48,56 @@ async function findDonorById(donorId, tx = null) {
   return rows[0] || null;
 }
 
+async function findDonorByUserId(userId, tx = null) {
+  const { rows } = await runner(tx)(
+    `SELECT donor_id FROM donors WHERE user_id = $1${tx ? ' FOR UPDATE' : ''}`,
+    [userId]
+  );
+  return rows[0] || null;
+}
+
+async function findDonorAccountById(userId, tx) {
+  const { rows } = await tx.query(
+    `SELECT phone FROM users
+      WHERE user_id = $1 AND role = 'Donor'
+      FOR UPDATE`,
+    [userId]
+  );
+  return rows[0] || null;
+}
+
+async function findDonorByPhone(phone, tx) {
+  const { rows } = await tx.query(
+    'SELECT donor_id, user_id FROM donors WHERE phone = $1 FOR UPDATE',
+    [phone]
+  );
+  return rows[0] || null;
+}
+
+async function linkDonorToUser(tx, donorId, userId) {
+  const { rows } = await tx.query(
+    `UPDATE donors SET user_id = $2
+      WHERE donor_id = $1 AND user_id IS NULL
+      RETURNING donor_id`,
+    [donorId, userId]
+  );
+  return rows[0] || null;
+}
+
+async function listDonationHistory(userId) {
+  const { rows } = await query(
+    `SELECT d.donation_id,
+            to_char(d.collection_date, 'YYYY-MM-DD') AS collection_date,
+            d.volume_ml, d.blood_group, d.screening_status, d.donation_status
+       FROM donations d
+       JOIN donors donor ON donor.donor_id = d.donor_id
+      WHERE donor.user_id = $1
+      ORDER BY d.collection_date DESC, d.donation_id DESC`,
+    [userId]
+  );
+  return rows;
+}
+
 async function nextDonorId(tx) {
   // Serialize donor ID allocation, including when the table is empty.
   await tx.query('SELECT pg_advisory_xact_lock($1)', [410937]);
@@ -134,6 +184,11 @@ async function getEligibilityConfig() {
 module.exports = {
   listDonors,
   findDonorById,
+  findDonorByUserId,
+  findDonorAccountById,
+  findDonorByPhone,
+  linkDonorToUser,
+  listDonationHistory,
   nextDonorId,
   createDonor,
   updateDonor,
