@@ -199,7 +199,7 @@ describe('Search Service & Route Unit Tests (Offline / Mocked DB)', () => {
 describeIfDb('Search Live DB Integration (TC-09, TC-12, TC-26)', () => {
   const STAFF_EMAIL = 'staff@bloodbank.org';
   const HOSPITAL_EMAIL = 'hospital@citygen.org';
-  const PASSWORD = 'Password123!';
+  const PASSWORD = 'Test@1234';
 
   async function loginAs(email, password) {
     const agent = request.agent(app);
@@ -212,7 +212,7 @@ describeIfDb('Search Live DB Integration (TC-09, TC-12, TC-26)', () => {
 
   it('allows Hospital user to search stock (FR-SRCH-01, TC-12)', async () => {
     const hospital = await loginAs(HOSPITAL_EMAIL, PASSWORD);
-    const res = await hospital.get('/api/search/stock?bloodGroup=O+');
+    const res = await hospital.get('/api/search/stock?bloodGroup=O%2B');
     expect(res.status).toBe(200);
     expect(res.body.bloodGroup).toBe('O+');
     expect(typeof res.body.availableUnits).toBe('number');
@@ -228,7 +228,7 @@ describeIfDb('Search Live DB Integration (TC-09, TC-12, TC-26)', () => {
 
   it('allows Staff to search stock and view unit IDs (FR-SRCH-02, TC-12)', async () => {
     const staff = await loginAs(STAFF_EMAIL, PASSWORD);
-    const res = await staff.get('/api/search/stock?bloodGroup=O+');
+    const res = await staff.get('/api/search/stock?bloodGroup=O%2B');
     expect(res.status).toBe(200);
     expect(res.body.bloodGroup).toBe('O+');
     expect(Array.isArray(res.body.units)).toBe(true);
@@ -236,7 +236,7 @@ describeIfDb('Search Live DB Integration (TC-09, TC-12, TC-26)', () => {
 
   it('allows Staff to search eligible donors with pagination (FR-SRCH-03, FR-SRCH-06, TC-26)', async () => {
     const staff = await loginAs(STAFF_EMAIL, PASSWORD);
-    const res = await staff.get('/api/search/donors?bloodGroup=O+&page=1');
+    const res = await staff.get('/api/search/donors?bloodGroup=O%2B&page=1');
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.donors)).toBe(true);
     expect(typeof res.body.total).toBe('number');

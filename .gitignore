@@ -1,9 +1,7 @@
+@"
 node_modules/
 .env
 dist/
 coverage/
-
 demo/drafts/
-
-demo/drafts/
-demo/drafts/
+"@ | Set-Content .gitignore
