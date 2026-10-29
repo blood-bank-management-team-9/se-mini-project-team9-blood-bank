@@ -30,9 +30,9 @@
 | 16 | **FR-DON-03** | Update donor contact & history | C6 Donor Service, C12 Audit | 4.3 `PUT /api/donors/:id` | TC-23 | Implemented (main) | `backend/src/modules/donors/donors.routes.test.js` |
 | 17 | **FR-DON-04** | Donor eligibility engine (age, weight, intervals) | C6 Eligibility Engine, C13 Config | 4.1 Eligibility, 4.2 SD-2 | TC-03 | Implemented (main) | `backend/src/modules/donors/donorEligibility.test.js` |
 | 18 | **FR-DON-05** | Return specific ineligibility reasons & next date | C6 Eligibility Engine | 4.3 `GET /api/donors/:id`, 4.1 | TC-23 | Implemented (main) | `backend/src/modules/donors/donorEligibility.test.js` |
-| 19 | **FR-DON-06** | Donor views own donation history | C6 Donor Service, C3 Filter | 4.3 `GET /api/donors/me/donations` | TC-24 | Planned (Sprint 3) | `backend/src/modules/donors/` |
+| 19 | **FR-DON-06** | Donor views own donation history | C6 Donor Service, C3 Filter | 4.3 `GET /api/donors/me/donations` | TC-24 | Implemented | `backend/src/modules/donors/donors.me.routes.test.js` |
 | 20 | **FR-DON-07** | Deactivate donor record (no hard delete) | C6 Donor Service | 4.3 `PATCH /api/donors/:id/status` | TC-25 | Implemented (main) | `backend/src/modules/donors/donors.routes.test.js` |
-| 21 | **FR-DON-08** | Link donor record to authenticated user account | C6 Donor Service, C4 Auth | 4.3 `GET /api/donors/me/donations` | TC-24 | Planned (Sprint 3) | `backend/src/modules/donors/` |
+| 21 | **FR-DON-08** | Link donor record to authenticated user account | C6 Donor Service, C4 Auth | 4.3 `POST /api/donors/me/link` | TC-24 | Implemented | `backend/src/modules/donors/donors.me.routes.test.js` |
 | 22 | **FR-SRCH-01** | Search available blood stock by group | C7 Search Service | 4.3 `GET /api/search/stock` | TC-12 | In review (PR #48) | `backend/src/modules/search/search.test.js` |
 | 23 | **FR-SRCH-02** | Stock result detail by role (Staff vs Public) | C7 Search Service | 4.3 `GET /api/search/stock` | TC-12 | In review (PR #48) | `backend/src/modules/search/search.test.js` |
 | 24 | **FR-SRCH-03** | Search eligible donors (Staff only) | C7 Search Service, C6 Engine | 4.3 `GET /api/search/donors` | TC-26 | In review (PR #48) | `backend/src/modules/search/search.test.js` |
