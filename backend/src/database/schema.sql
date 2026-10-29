@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS users (
     name VARCHAR(60) NOT NULL,
     email VARCHAR(60) NOT NULL UNIQUE,
     phone VARCHAR(10) NOT NULL UNIQUE,
+    address VARCHAR(120),
     password_hash VARCHAR(255) NOT NULL,
     role VARCHAR(20) NOT NULL CHECK (role IN ('Donor', 'Hospital/Patient', 'Staff', 'Admin')),
     status VARCHAR(20) NOT NULL DEFAULT 'Active' CHECK (status IN ('Active', 'Inactive', 'Locked')),
@@ -135,3 +136,6 @@ CREATE INDEX IF NOT EXISTS idx_donors_search ON donors (status, blood_group, pin
 CREATE INDEX IF NOT EXISTS idx_donations_donor ON donations (donor_id, collection_date);
 CREATE INDEX IF NOT EXISTS idx_donations_date ON donations (collection_date);
 CREATE INDEX IF NOT EXISTS idx_blood_requests_dates ON blood_requests (created_at, status);
+-- Migration (issue #14): add users.address for FR-AUTH-06 profile update.
+-- Idempotent: safe to run on databases that already have the column.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS address VARCHAR(120);

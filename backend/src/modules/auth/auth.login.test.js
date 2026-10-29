@@ -183,7 +183,7 @@ describeIfDb('POST /api/auth/logout (FR-AUTH-07)', () => {
     // Confirm session works.
     const me1 = await agent.get('/api/auth/me');
     expect(me1.status).toBe(200);
-    expect(me1.body.user.role).toBe('Donor');
+    expect(me1.body.role).toBe('Donor');
 
     // Logout.
     const logout = await agent.post('/api/auth/logout');

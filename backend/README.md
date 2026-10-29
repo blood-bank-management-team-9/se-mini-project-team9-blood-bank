@@ -6,13 +6,13 @@
 ![Status](https://img.shields.io/badge/status-partial%20implementation-orange)
 
 REST API for the **Blood Bank Management System (BBMS)**, Team 9.
-Built with Node.js, Express and PostgreSQL. It implements the C3 API Layer, meaning the middleware chain, security controls, authentication and data-access primitives, as specified in SAD v1.0.
+Built with Node.js, Express and PostgreSQL. It implements the C3 API Layer (middleware chain, security controls, authentication, donors, donations, stock, search, reports, admin and audit) as specified in SAD v1.0.
 
 > **Scope of this README: backend only.** Frontend and team-level documentation live elsewhere in the repository.
 
 > **Status: partial implementation.**
-> Implemented: request tracing, sessions, RBAC, CSRF, validation, error handling, transactions, audit logging, registration, login (with lockout), logout, donor profile management and eligibility, admin user management, and audit retention.
-> Not implemented: password reset, donation, stock, request and report modules (see [Section 11](#11-not-in-this-branch)).
+> Implemented: request tracing, sessions, RBAC, CSRF, validation, error handling, transactions, audit logging, PII log redaction, registration, login (with lockout), logout, password reset (one-time, 15 min), own profile (name, phone, address), donor profile management and eligibility, donation recording (with 24-hour correction), stock summary and discard, stock and donor search, reports (stock, donation, request) with CSV/PDF export, admin user management, and audit retention.
+> Not implemented: blood request submission and approval (FEFO), real email delivery, and frontend integration (see [Section 11](#11-not-in-this-branch)).
 
 ---
 
@@ -68,7 +68,7 @@ Background: `node-cron` runs the audit retention job daily at 02:00 (Section 6.4
 - **Traceable.** Every response carries an `X-Request-Id`, and the same ID appears in error bodies.
 - **Atomic writes.** Multi-step database changes go through `withTransaction(fn)`.
 - **Parameterised SQL only.** No string-built queries.
-- **Layered auth module.** Routes call the service, and the service calls the repository (SAD C4).
+- **Layered modules.** Routes call the service, and the service calls the repository (SAD C4 to C11).
 
 ### Implemented in this branch
 
@@ -80,17 +80,27 @@ Background: `node-cron` runs the audit retention job daily at 02:00 (Section 6.4
 | Input validation (`VALIDATION_ERROR`) | NFR-SEC-05 | `src/middleware/validate.js` |
 | CSRF protection (double-submit, `csrf-csrf@4`) | SAD 3.6 / C3 | `src/middleware/csrf.js` |
 | Standard error shape | SAD 4.4 | `src/middleware/errorHandler.js` |
+| PII log redaction | NFR-SEC-07 | `src/middleware/redaction.js` |
 | Atomic transactions | NFR-QUAL-03 | `src/database/transaction.js` |
 | Audit trail writer | NFR-SEC-02 / C12 | `src/modules/audit/audit.repository.js` |
 | Audit retention (365 days) | NFR-SEC-06 / C12 | `src/modules/audit/audit.retention.js` |
+| Config constants (shelf life, thresholds) | FR-STK, C13 | `src/config/constants.js` |
 | User registration (Donor, Hospital/Patient) | FR-AUTH-01, FR-AUTH-02, NFR-SEC-01 | `src/modules/auth/` |
-| **Login by email + password, with lockout** | FR-AUTH-03, FR-AUTH-04 | `src/modules/auth/` |
-| **Logout (session destroyed, cookie cleared)** | FR-AUTH-07 | `src/modules/auth/` |
-| Login/logout audit events | NFR-SEC-06 | `src/modules/auth/auth.service.js` |
+| Login by email + password, with lockout | FR-AUTH-03, FR-AUTH-04 | `src/modules/auth/` |
+| Logout (session destroyed, cookie cleared) | FR-AUTH-07 | `src/modules/auth/` |
+| Password reset (one-time, 15-min token) | FR-AUTH-05 | `src/modules/auth/` |
+| Own profile view and update (name, phone, address) | FR-AUTH-06 | `src/modules/auth/` |
+| Login, logout, reset and profile audit events | NFR-SEC-06 | `src/modules/auth/auth.service.js` |
 | Donor profile CRUD, validation, status changes and audit events | FR-DON-01, FR-DON-02, FR-DON-03, FR-DON-07 | `src/modules/donors/` |
 | Config-driven eligibility evaluation with specific ineligibility reasons | FR-DON-04, FR-DON-05, BR-03 | `src/modules/donors/donorEligibility.js` |
+| Donation recording, unit creation, 24-hour correction | FR-DNR-01 to FR-DNR-06 | `src/modules/donations/` |
+| Stock summary by group and status | FR-STK-01, FR-STK-02, FR-STK-05 | `src/modules/stock/` |
+| Discard unit with reason | FR-STK-06, FR-STK-07 | `src/modules/stock/` |
+| Search stock and donors | FR-SRCH-01 to FR-SRCH-06 | `src/modules/search/` |
+| Reports (stock, donation, request) with CSV/PDF export | FR-RPT-01 to FR-RPT-06 | `src/modules/reports/` |
 | Admin user management (staff create, list, status, role) | FR-ADM-01 to FR-ADM-06 | `src/modules/admin/` |
 | Audit log viewer (admin only) | FR-ADM-05 | `src/modules/admin/` |
+| Health endpoint with DB ping | n/a | `src/modules/health/` |
 | Demonstration and test-only routes | n/a | `src/modules/auth/auth.routes.js` |
 
 ---
@@ -101,15 +111,24 @@ Background: `node-cron` runs the audit retention job daily at 02:00 (Section 6.4
 |---|---|---|
 | FR-AUTH-01, FR-AUTH-02 | `POST /api/auth/register` | [Section 7.9](#79-registration-fr-auth-01-fr-auth-02-nfr-sec-01), `auth.register.test.js` |
 | FR-AUTH-03, FR-AUTH-04 | `POST /api/auth/login` | `auth.login.test.js` |
+| FR-AUTH-05 | `POST /api/auth/forgot-password`, `POST /api/auth/reset-password` | [Section 7.11](#711-password-reset-fr-auth-05), `auth.password-reset.test.js` (STP TC-20) |
+| FR-AUTH-06 | `GET /api/auth/me`, `PUT /api/auth/me` | [Section 7.12](#712-profile-view-and-update-fr-auth-06), `auth.profile.test.js` |
 | FR-AUTH-07 | `POST /api/auth/logout` | `auth.login.test.js` |
 | FR-DON-01, FR-DON-02, FR-DON-03, FR-DON-07 | `/api/donors*` | `donors.test.js` (STP TC-22, TC-36) |
 | FR-DON-04, FR-DON-05, BR-03 | `GET /api/donors/{id}/eligibility` | `donorEligibility.test.js`, `donors.test.js` (STP TC-23) |
+| FR-DNR-01 to FR-DNR-05 | `POST /api/donations` | `donations.record.*.test.js` (STP TC-04, TC-05, TC-27) |
+| FR-DNR-06 | `PUT /api/donations/{id}` | `donations.*.test.js` (STP TC-27) |
+| FR-STK-01, FR-STK-02, FR-STK-05 | `GET /api/stock/summary`, `GET /api/stock/units` | `stock.service.test.js`, `stock.routes.test.js` |
+| FR-STK-06, FR-STK-07 | `PATCH /api/stock/units/{id}/discard` | `stock.discard.test.js`, `stock.discard.routes.test.js` (STP TC-29) |
+| FR-SRCH-01 to FR-SRCH-06 | `/api/search/stock`, `/api/search/donors` | `search.test.js` (STP TC-09, TC-12, TC-26) |
+| FR-RPT-01 to FR-RPT-06 | `/api/reports/*` | `reports.test.js` (STP TC-09, TC-10, TC-32) |
 | FR-ADM-01 to FR-ADM-06 | `/api/admin/users*` | `admin.test.js` |
-| NFR-SEC-06 | Audit writes + 365-day retention | `auth.login.test.js`, `admin.test.js`, `audit.retention.test.js` |
 | NFR-SEC-01 | Registration credential handling | [Section 7.9](#79-registration-fr-auth-01-fr-auth-02-nfr-sec-01) |
 | NFR-SEC-02 | RBAC middleware + audit writer | [Section 7.5](#75-rbac-denial-as-donor-nfr-sec-02) and [Section 7.6](#76-confirm-the-audit-row-nfr-sec-02-logging-clause) |
 | NFR-SEC-04 | Session middleware (15-min idle expiry) | [Section 7.3](#73-create-a-donor-session-nfr-sec-04), [Section 7.4](#74-authenticated-request-nfr-sec-04), `session.test.js` |
 | NFR-SEC-05 | Validation middleware | `POST /api/auth/demo-validate`, `validate.test.js` |
+| NFR-SEC-06 | Audit writes + 365-day retention | `auth.login.test.js`, `admin.test.js`, `audit.retention.test.js` |
+| NFR-SEC-07 | PII log redaction | `nfr.test.js` |
 | NFR-QUAL-03 | Transaction helper | `transaction.test.js` |
 | SAD 4.4 | Error handler | Every error response in [Section 7](#7-verification) |
 
@@ -223,9 +242,10 @@ Only these routes are mounted. Everything else is future work.
 
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
-| `GET` | `/api/health` | none | Health check |
+| `GET` | `/api/health` | none | Health check with DB ping |
 | `GET` | `/api/auth/csrf` | none | Issues a CSRF token (sets `bbms.csrf` cookie) |
-| `GET` | `/api/auth/me` | session | Returns current session user |
+| `GET` | `/api/auth/me` | session (Donor, Hospital/Patient) | Current user's DB-backed profile (FR-AUTH-06) |
+| `PUT` | `/api/auth/me` | session (Donor, Hospital/Patient) | Update name, phone, address (FR-AUTH-06) |
 | `GET` | `/api/auth/staff-only` | Staff | Demonstrates RBAC allow and 403 paths |
 | `POST` | `/api/auth/demo-validate` | none | Demonstrates the `VALIDATION_ERROR` shape |
 | `POST` | `/api/auth/__dev-session` | none, **test-only** | Creates a session for a seeded user by role |
@@ -233,12 +253,25 @@ Only these routes are mounted. Everything else is future work.
 | `POST` | `/api/auth/register` | none | Register as Donor or Hospital/Patient (FR-AUTH-01, FR-AUTH-02, NFR-SEC-01) |
 | `POST` | `/api/auth/login` | none | Authenticate by email + password. Returns session cookie on success (FR-AUTH-03, FR-AUTH-04) |
 | `POST` | `/api/auth/logout` | session | Ends the current session and clears the cookie (FR-AUTH-07) |
+| `POST` | `/api/auth/forgot-password` | none | Request a password reset. Returns `resetToken` in dev (email deferred) (FR-AUTH-05) |
+| `POST` | `/api/auth/reset-password` | none | Set a new password with a reset token. One-time, 15-min expiry (FR-AUTH-05) |
 | `POST` | `/api/donors` | Staff, Admin | Register and validate a donor (FR-DON-01, FR-DON-02) |
 | `GET` | `/api/donors?status=&bloodGroup=&q=` | Staff, Admin | List and filter donor profiles |
 | `GET` | `/api/donors/{id}` | Staff, Admin | Read a donor profile |
 | `GET` | `/api/donors/{id}/eligibility` | Staff, Admin | Evaluate eligibility using system configuration and return reason codes/messages (FR-DON-04, FR-DON-05, BR-03) |
 | `PUT` | `/api/donors/{id}` | Staff, Admin | Update a donor profile (FR-DON-03) |
 | `PATCH` | `/api/donors/{id}/status` | Staff, Admin | Deactivate or reactivate a donor (FR-DON-07) |
+| `POST` | `/api/donations` | Staff, Admin | Record a donation; creates a blood unit if screening passed (FR-DNR-01 to FR-DNR-05) |
+| `PUT` | `/api/donations/{id}` | Staff, Admin | Correct a donation within 24 hours (FR-DNR-06) |
+| `GET` | `/api/stock/summary` | Staff, Admin | Stock counts by blood group and status (FR-STK-01, FR-STK-04) |
+| `GET` | `/api/stock/units?bloodGroup=` | Staff, Admin | Individual units with expiry (FR-STK-02, FR-STK-05) |
+| `PATCH` | `/api/stock/units/{id}/discard` | Staff, Admin | Discard a unit with a reason (FR-STK-06, FR-STK-07) |
+| `GET` | `/api/search/stock?bloodGroup=O%2B` | Hospital/Patient, Staff, Admin | Search available units (FR-SRCH-01, FR-SRCH-02) |
+| `GET` | `/api/search/donors?bloodGroup=&city=&pin=&page=` | Staff, Admin | Search eligible donors, paginated (FR-SRCH-03, FR-SRCH-04, FR-SRCH-06) |
+| `GET` | `/api/reports/stock?from=&to=&bloodGroup=&status=` | Staff, Admin | Stock report (FR-RPT-01, FR-RPT-04, FR-RPT-06) |
+| `GET` | `/api/reports/donation?from=&to=&bloodGroup=&status=` | Staff, Admin | Donation report (FR-RPT-02, FR-RPT-04) |
+| `GET` | `/api/reports/request?from=&to=&bloodGroup=&status=` | Staff, Admin | Request report (FR-RPT-03, FR-RPT-04) |
+| `GET` | `/api/reports/{type}/export?format=csv\|pdf` | Staff, Admin | Export a report (FR-RPT-05) |
 | `POST` | `/api/admin/users` | Admin | Create a Staff account (FR-ADM-01) |
 | `GET` | `/api/admin/users?role=&status=&q=` | Admin | List and filter users (FR-ADM-02) |
 | `PATCH` | `/api/admin/users/{id}/status` | Admin | Activate/deactivate user; blocks last-admin deactivation (FR-ADM-03, FR-ADM-06) |
@@ -248,7 +281,9 @@ Only these routes are mounted. Everything else is future work.
 > **Security:** `__dev-session` and `__dev-logout` exist only when `NODE_ENV !== 'production'`.
 > Real login and logout now exist, so these helpers should be removed once nothing depends on them.
 
-The eligibility response includes `eligible`, `evaluatedAt`, `nextEligibleDate`, and `ineligibilityReasons` (each with a stable `code` and human-readable `message`). Rules are loaded from `system_config` on each check: minimum/maximum age, minimum weight, and the sex-based donation interval. Profile validation accepts otherwise valid ineligible records so that this endpoint can explain why they cannot donate.
+**Eligibility response.** `GET /api/donors/{id}/eligibility` returns `eligible`, `evaluatedAt`, `nextEligibleDate`, and `ineligibilityReasons` (each with a stable `code` and human-readable `message`). Rules are loaded from `system_config` on each check: minimum/maximum age, minimum weight, and the sex-based donation interval. Profile validation accepts otherwise valid ineligible records so that this endpoint can explain why they cannot donate.
+
+**Blood group in query strings.** `+` must be URL-encoded as `%2B` (`?bloodGroup=O%2B`). An unencoded `+` is decoded as a space per RFC 3986 and rejected with `400 VALIDATION_ERROR`.
 
 ### 6.2 Conventions
 
@@ -271,7 +306,10 @@ The eligibility response includes `eligible`, `evaluatedAt`, `nextEligibleDate`,
 
 | HTTP | `code` | Meaning |
 |---|---|---|
-| 400 | `VALIDATION_ERROR` | Request body failed validation |
+| 400 | `VALIDATION_ERROR` | Request body or query failed validation |
+| 400 | `INVALID_TOKEN` | Password reset: token not found |
+| 400 | `TOKEN_ALREADY_USED` | Password reset: token already used |
+| 400 | `TOKEN_EXPIRED` | Password reset: token expired |
 | 400 | `NO_ACTIVE_USER` | `__dev-session`: no active user for that role |
 | 401 | `UNAUTHENTICATED` | No session |
 | 401 | `INVALID_CREDENTIALS` | Unknown email or wrong password |
@@ -279,9 +317,12 @@ The eligibility response includes `eligible`, `evaluatedAt`, `nextEligibleDate`,
 | 403 | `ACCOUNT_INACTIVE` | Login: correct password but account inactive |
 | 403 | `SELF_ACTION_DENIED` | Admin changing own status or role |
 | 403 | `EBADCSRFTOKEN` | Missing or invalid CSRF token |
-| 404 | `NOT_FOUND` | Unknown route or unknown user |
+| 404 | `NOT_FOUND` | Unknown route or unknown record |
 | 409 | `ACCOUNT_EXISTS` | Duplicate email/phone |
+| 409 | `DONOR_EXISTS` | Duplicate donor phone |
 | 409 | `LAST_ADMIN` | Last active admin cannot be deactivated or demoted |
+| 409 | `INVALID_STATE` | Operation not allowed in the current state |
+| 422 | `NOT_ELIGIBLE` | Donation: donor not eligible (`reasons[]` in body) |
 | 423 | `ACCOUNT_LOCKED` | Login lockout; `{minutesLeft}` in body |
 
 ### 6.4 Background jobs
@@ -300,7 +341,8 @@ These steps prove each requirement on a live server. Run them in a **second** te
 
 - Use **`curl.exe`**, not `Invoke-WebRequest -WebSession`, which is unreliable on Windows PowerShell 5.1.
 - Run each command on its own.
-- Keep `cookies.txt` and `body.json` out of git (add them to `.gitignore`, or delete them in [Section 7.11](#711-clean-up)).
+- Keep `cookies.txt` and `body.json` out of git (add them to `.gitignore`, or delete them in [Section 7.13](#713-clean-up)).
+- Section 7.11 changes the seeded donor's password. Run `npm run db:seed --prefix backend` (or `db:reset`) afterwards if you need `Test@1234` again.
 
 Login and logout are covered by `auth.login.test.js` (see [Section 8](#8-automated-tests)).
 
@@ -340,7 +382,9 @@ Expected: `{"ok":true,"user":{"userId":"USR-DNR01","role":"Donor","name":"John D
 curl.exe -s -b cookies.txt http://localhost:5000/api/auth/me
 ```
 
-Expected: `{"user":{"userId":"USR-DNR01","role":"Donor","name":"John Doe (Donor)"}}`
+Expected: `{"userId":"USR-DNR01","name":"John Doe (Donor)","email":"john.doe@example.com","phone":"9876543212","address":"12 MG Road, Bangalore","role":"Donor","status":"Active"}`
+
+This is the DB-backed profile (FR-AUTH-06); see [Section 7.12](#712-profile-view-and-update-fr-auth-06).
 
 ### 7.5 RBAC denial as Donor (NFR-SEC-02)
 
@@ -450,7 +494,7 @@ curl.exe -s -b admin-cookies.txt -c admin-cookies.txt -X POST http://localhost:5
 
 Expected: `{"userId":"USR-ADM01","name":"System Administrator","role":"Admin"}`
 
-Then create a Staff:
+Create a Staff account:
 
 ```powershell
 $tokenB = (curl.exe -s -b admin-cookies.txt -c admin-cookies.txt http://localhost:5000/api/auth/csrf | ConvertFrom-Json).csrfToken
@@ -471,10 +515,71 @@ curl.exe -s -b admin-cookies.txt "http://localhost:5000/api/admin/users?role=Sta
 
 Expected: `{"users":[{...}],"total":N}` with only Staff rows.
 
-### 7.11 Clean up
+### 7.11 Password reset (FR-AUTH-05)
+
+**Dev-mode shortcut:** since SMTP is deferred, the reset token is returned in the response body.
 
 ```powershell
-Remove-Item cookies.txt, admin-cookies.txt, body.json -ErrorAction SilentlyContinue
+Remove-Item c.txt -ErrorAction SilentlyContinue
+$token = (curl.exe -s -c c.txt http://localhost:5000/api/auth/csrf | ConvertFrom-Json).csrfToken
+'{"email":"john.doe@example.com"}' | Out-File -Encoding ascii -NoNewline body.json
+$resp = curl.exe -s -b c.txt -c c.txt -X POST http://localhost:5000/api/auth/forgot-password `
+  -H "Content-Type: application/json" `
+  -H "x-csrf-token: $token" `
+  --data-binary "@body.json" | ConvertFrom-Json
+$resetToken = $resp.resetToken
+"Token length: $($resetToken.Length)"
+```
+
+Expected: `Token length: 64` (32 random bytes, hex-encoded).
+
+```powershell
+"{`"token`":`"$resetToken`",`"newPassword`":`"NewPass123`"}" | Out-File -Encoding ascii -NoNewline body.json
+curl.exe -s -b c.txt -c c.txt -X POST http://localhost:5000/api/auth/reset-password `
+  -H "Content-Type: application/json" `
+  -H "x-csrf-token: $token" `
+  --data-binary "@body.json"
+```
+
+Expected: `{"message":"Password reset successfully"}`.
+
+Reusing the same token returns `400 TOKEN_ALREADY_USED`.
+
+### 7.12 Profile view and update (FR-AUTH-06)
+
+Log in as the donor with the password set in [Section 7.11](#711-password-reset-fr-auth-05), then view the profile.
+
+```powershell
+$token2 = (curl.exe -s -b c.txt -c c.txt http://localhost:5000/api/auth/csrf | ConvertFrom-Json).csrfToken
+'{"email":"john.doe@example.com","password":"NewPass123"}' | Out-File -Encoding ascii -NoNewline body.json
+curl.exe -s -b c.txt -c c.txt -X POST http://localhost:5000/api/auth/login `
+  -H "Content-Type: application/json" `
+  -H "x-csrf-token: $token2" `
+  --data-binary "@body.json"
+curl.exe -s -b c.txt http://localhost:5000/api/auth/me
+```
+
+Expected: `{"userId":"USR-DNR01","name":"John Doe (Donor)","email":"john.doe@example.com","phone":"9876543212","address":"12 MG Road, Bangalore","role":"Donor","status":"Active"}`
+
+Update the profile:
+
+```powershell
+$token4 = (curl.exe -s -b c.txt -c c.txt http://localhost:5000/api/auth/csrf | ConvertFrom-Json).csrfToken
+'{"name":"John Doe Updated","phone":"9876543212","address":"99 Test Street, Bangalore"}' | Out-File -Encoding ascii -NoNewline body.json
+curl.exe -s -b c.txt -c c.txt -X PUT http://localhost:5000/api/auth/me `
+  -H "Content-Type: application/json" `
+  -H "x-csrf-token: $token4" `
+  --data-binary "@body.json"
+```
+
+Expected: `{"userId":"USR-DNR01","name":"John Doe Updated","address":"99 Test Street, Bangalore",...}`
+
+`PUT /api/auth/me` from a **Staff** or **Admin** session returns `403 ACCESS_DENIED`.
+
+### 7.13 Clean up
+
+```powershell
+Remove-Item cookies.txt, admin-cookies.txt, c.txt, body.json -ErrorAction SilentlyContinue
 ```
 
 ---
@@ -486,22 +591,42 @@ npm test --prefix backend
 npm run lint --prefix backend
 ```
 
+All suites should pass and lint should print nothing (0 errors, 0 warnings).
+Current state at the time of writing: **32 suites, 248 tests**.
+
+Suites marked **needs a live PostgreSQL** use `describeIfDb` and skip automatically when `DATABASE_URL` is not set.
+
 | Suite | Covers |
 |---|---|
 | `health.test.js` | Health route and `NOT_FOUND` shape |
 | `rbac.test.js` | Role allow/deny logic |
 | `validate.test.js` | `VALIDATION_ERROR` shape |
 | `session.test.js` | Session behaviour and idle expiry |
+| `nfr.test.js` | NFR middleware checks (redaction, indexes) |
+| `rtmValidation.test.js` | RTM consistency check |
 | `database.test.js` | Pool and connectivity |
 | `transaction.test.js` | Commit and rollback (**needs a live PostgreSQL**) |
 | `auth.register.test.js` | Registration (**needs a live PostgreSQL**) |
 | `auth.login.test.js` | Login, lockout and logout (**needs a live PostgreSQL**) |
+| `auth.password-reset.test.js` | Password reset token lifecycle (**needs a live PostgreSQL**) |
+| `auth.profile.test.js` | Profile view and update, role restriction, phone uniqueness (**needs a live PostgreSQL**) |
+| `donors.test.js` | Donor CRUD, validation, status changes (**needs a live PostgreSQL**) |
+| `donors.service.test.js` | Donor service unit tests |
+| `donorEligibility.test.js` | Eligibility rules |
+| `donors.eligibility.test.js` | Eligibility integration |
+| `donations.record.*.test.js` | Donation recording: repository, service, routes (**needs a live PostgreSQL**) |
+| `donations.repository.test.js` | Donations data access (**needs a live PostgreSQL**) |
+| `donations.service.test.js` | Donations service unit tests |
+| `donations.access.test.js` | Donations RBAC and access |
+| `donations.timezone.test.js` | Date handling and timezone |
+| `stock.service.test.js` | Stock summary unit tests |
+| `stock.routes.test.js` | Stock routes |
+| `stock.discard.test.js` | Discard service tests |
+| `stock.discard.routes.test.js` | Discard route tests |
+| `search.test.js` | Stock and donor search endpoints (**needs a live PostgreSQL**) |
+| `reports.test.js` | Report generation and export (**needs a live PostgreSQL**) |
 | `admin.test.js` | Admin user management and audit (**needs a live PostgreSQL**) |
-| `audit.retention.test.js` | Audit log retention deletes rows older than 365 days (NFR-SEC-06, **needs a live PostgreSQL**) |
-
-All suites should pass and lint should print nothing (0 errors, 0 warnings).
-Suites that need a database skip automatically when `DATABASE_URL` is not set.
-Current state at the time of writing: **14 suites, 88 tests**.
+| `audit.retention.test.js` | Audit retention deletes rows older than 365 days (NFR-SEC-06, **needs a live PostgreSQL**) |
 
 ---
 
@@ -510,42 +635,76 @@ Current state at the time of writing: **14 suites, 88 tests**.
 ```
 backend/
 +-- package.json
-+-- .env.example                  # SESSION_SECRET / CSRF_SECRET placeholders
++-- .env.example                      # SESSION_SECRET / CSRF_SECRET placeholders
 +-- src/
-    +-- app.js                    # middleware chain (see Section 10)
-    +-- server.js                 # HTTP listener + audit retention cron
+    +-- app.js                        # middleware chain (see Section 10)
+    +-- server.js                     # HTTP listener + audit retention cron
     +-- config.js
-    +-- routes.js                 # mounts /health, /auth and /admin
+    +-- routes.js                     # mounts /health, /auth, /donors, /donations, /stock, /search, /reports, /admin
+    +-- __tests__/
+    |   +-- rtmValidation.test.js
+    +-- config/
+    |   +-- constants.js              # shelf life, thresholds, default config
     +-- middleware/
-    |   +-- requestId.js          # req.id + X-Request-Id
-    |   +-- session.js            # express-session + connect-pg-simple
-    |   +-- rbac.js               # requireRole(...): deny by default, 403 + audit
-    |   +-- validate.js           # express-validator runner -> VALIDATION_ERROR
-    |   +-- csrf.js               # csrf-csrf@4 double-submit config
-    |   +-- errorHandler.js       # notFound + errorHandler (SAD 4.4 shape)
-    |   +-- *.test.js             # rbac, validate, session
+    |   +-- requestId.js              # req.id + X-Request-Id
+    |   +-- session.js                # express-session + connect-pg-simple
+    |   +-- rbac.js                   # requireRole(...): deny by default, 403 + audit
+    |   +-- validate.js               # express-validator runner -> VALIDATION_ERROR
+    |   +-- csrf.js                   # csrf-csrf@4 double-submit config
+    |   +-- errorHandler.js           # notFound + errorHandler (SAD 4.4 shape)
+    |   +-- redaction.js              # PII log redaction
+    |   +-- *.test.js                 # rbac, validate, session, nfr
     +-- database/
-    |   +-- db.js                 # pg Pool (DATABASE_URL preferred)
-    |   +-- transaction.js        # withTransaction(fn): BEGIN/COMMIT/ROLLBACK
+    |   +-- db.js                     # pg Pool (DATABASE_URL preferred)
+    |   +-- transaction.js            # withTransaction(fn): BEGIN/COMMIT/ROLLBACK
     |   +-- schema.sql, seeds.sql
     |   +-- migrate.js, seed.js, reset.js
-    |   +-- *.test.js             # database, transaction
+    |   +-- *.test.js                 # database, transaction
     +-- modules/
         +-- audit/
-        |   +-- audit.repository.js       # parameterised INSERT into audit_log
-        |   +-- audit.retention.js        # daily 365-day retention job
+        |   +-- audit.repository.js         # parameterised INSERT into audit_log
+        |   +-- audit.retention.js          # daily 365-day retention job
         |   +-- audit.retention.test.js
         +-- auth/
-        |   +-- auth.routes.js        # register, login, logout, demo and test-only routes
-        |   +-- auth.service.js       # password policy, hashing, login and lockout logic
-        |   +-- auth.repository.js    # data access
-        |   +-- auth.*.test.js        # register, login
+        |   +-- auth.routes.js              # register, login, logout, password reset, profile, demo/test routes
+        |   +-- auth.service.js             # password policy, hashing, login/lockout, reset, profile
+        |   +-- auth.repository.js          # data access
+        |   +-- auth.*.test.js              # register, login, password-reset, profile
         +-- admin/
-        |   +-- admin.routes.js       # /api/admin/users* and audit-logs
-        |   +-- admin.service.js      # user management + last-admin protection
-        |   +-- admin.repository.js   # data access
+        |   +-- admin.routes.js             # /api/admin/users* and audit-logs
+        |   +-- admin.service.js            # user management + last-admin protection
+        |   +-- admin.repository.js         # data access
         |   +-- admin.test.js
-        +-- health/               # health.routes.js, health.test.js
+        +-- donors/
+        |   +-- donors.routes.js            # /api/donors*
+        |   +-- donors.service.js           # donor CRUD, status
+        |   +-- donors.repository.js        # data access
+        |   +-- donorEligibility.js         # config-driven eligibility engine
+        |   +-- *.test.js
+        +-- donations/
+        |   +-- donations.routes.js         # /api/donations*
+        |   +-- donations.record.service.js # donation recording
+        |   +-- donations.record.repository.js
+        |   +-- donations.service.js        # 24-hour correction
+        |   +-- donations.repository.js
+        |   +-- *.test.js
+        +-- stock/
+        |   +-- stock.routes.js             # /api/stock/*
+        |   +-- stock.service.js            # summary, discard
+        |   +-- stock.repository.js
+        |   +-- *.test.js
+        +-- search/
+        |   +-- search.routes.js            # /api/search/*
+        |   +-- search.service.js
+        |   +-- search.repository.js
+        |   +-- search.test.js
+        +-- reports/
+        |   +-- reports.routes.js           # /api/reports/*
+        |   +-- reports.service.js
+        |   +-- reports.repository.js
+        |   +-- reports.exporter.js         # CSV and PDF
+        |   +-- reports.test.js
+        +-- health/                         # health.routes.js, health.controller.js, health.test.js
 ```
 
 ---
@@ -579,11 +738,9 @@ Two reorderings fail silently:
 
 Owned by other stories. Do not assume they exist.
 
-- Password reset (FR-AUTH-05)
-- Donation recording and unit creation
-- Stock management and the expiry job
-- Blood request approval with FEFO
-- Reports (CSV / PDF export)
+- Blood request submission, tracking and approval with FEFO (FR-REQ-01 to FR-REQ-08)
+- Real SMTP for password reset (email is deferred; see deviation 10)
+- Frontend integration for the modules above (the UI shell uses mock data; API wiring is a follow-up)
 - Production CSRF token issuance from a UI route
 
 ---
@@ -596,9 +753,14 @@ Owned by other stories. Do not assume they exist.
 4. **`csrf-csrf@4` requires `getSessionIdentifier`.** It returns a random `csrfId` stored in `req.session`, created lazily on first use. It does not use `req.sessionID`, which `express-session` leaves unset when `saveUninitialized: false` and no session exists yet.
 5. **`__dev-session` uses a real seeded user.** `audit_log.user_id` is a foreign key to `users.user_id`, so a fabricated ID would make `ACCESS_DENIED` inserts fail silently and violate NFR-SEC-02's logging clause.
 6. **`__dev-session` and `__dev-logout` are test-only** (guarded by `NODE_ENV !== 'production'`). Real login and logout now exist, so these helpers should be removed once no test or workflow depends on them.
-7. **Database-backed suites need a live PostgreSQL** (`transaction`, `auth.register`, `auth.login`, `admin`, `audit.retention`). They clean up after themselves and skip when `DATABASE_URL` is unset, so CI without a database does not fail.
+7. **Database-backed suites need a live PostgreSQL** (`transaction`, `auth.register`, `auth.login`, `auth.password-reset`, `auth.profile`, `donors`, `donations.*`, `search`, `reports`, `admin`, `audit.retention`). They clean up after themselves and skip when `DATABASE_URL` is unset, so CI without a database does not fail.
 8. **`SESSION_SECRET` and `CSRF_SECRET` are mandatory in production.** Placeholders are in `backend/.env.example`.
 9. **Audit retention (NFR-SEC-06).** The retention job runs daily at 02:00 local time and deletes `audit_log` rows older than 365 days (`src/modules/audit/audit.retention.js`). The 365-day period is hard-coded to match the SRS text ("keep these logs for 1 year"). Making it configurable via `system_config` is a future enhancement, not a current requirement.
+10. **Email sending is deferred (FR-AUTH-05).** `POST /api/auth/forgot-password` returns the reset token in the response body instead of sending an email. This is a development-only shortcut. In production, returning the token to the requester would allow account takeover, so real SMTP (SAD C14 Email Adapter) is required before deployment. Tracked as a follow-up.
+11. **Schema change: `users.address` added (FR-AUTH-06).** The SRS Appendix B.1 field layout for `users` does not include `address`, but FR-AUTH-06 requires updating it. The column `users.address VARCHAR(120)` is added via an idempotent `ALTER TABLE` in `schema.sql`, and the four seeded users are filled in `seeds.sql`. This deviates from the SRS field layout and needs reviewer acknowledgement.
+12. **CI does not run DB-backed suites.** `.github/workflows/` has no Postgres service, so `describeIfDb` skips 18+ suites in CI. A local `npm test` with a live database is the only full run. Tracked as a follow-up.
+13. **`+` in query strings must be URL-encoded.** `GET /api/search/stock?bloodGroup=O%2B`: an unencoded `+` is decoded as a space per RFC 3986 and rejected with `400 VALIDATION_ERROR`. Browsers encode correctly; hand-written clients must do so too.
+14. **`users.address` and `donors.address` are independent.** `users.address` is the account's contact address; `donors.address` is the donor's home address. The two can differ.
 
 ---
 
@@ -610,9 +772,11 @@ Owned by other stories. Do not assume they exist.
 | `Cannot read properties of undefined (reading 'bbms.csrf')` | `cookie-parser` is missing or mounted after CSRF. See [Section 10](#10-middleware-order-do-not-reorder). |
 | `EBADCSRFTOKEN` on POST | Missing `x-csrf-token` header, or the token came from a different cookie jar. CSRF is bypassed under `NODE_ENV=test` but active in `development`. |
 | `400 NO_ACTIVE_USER` from `__dev-session` | No active user for that role. Run `npm run db:seed --prefix backend`. |
-| Login keeps failing for a known account | The account may be locked after repeated failed attempts. See the lockout logic in `src/modules/auth/auth.service.js`. |
+| `400 VALIDATION_ERROR` on `?bloodGroup=O+` | URL-encode the `+` as `%2B`. See deviation 13. |
+| Login keeps failing for a known account | The account may be locked after repeated failed attempts, or its password was changed in [Section 7.11](#711-password-reset-fr-auth-05). See the lockout logic in `src/modules/auth/auth.service.js`, or reseed. |
 | `audit_log violates foreign key constraint` | The audit writer got a `user_id` that does not exist, usually from a session built with a fabricated ID. Use a seeded user. |
 | `LAST_ADMIN` on admin deactivation | You tried to deactivate the last active admin. Protected by FR-ADM-06. |
+| `column "address" does not exist` | The `users.address` migration did not run. Run `npm run db:migrate --prefix backend`. |
 | `connect ECONNREFUSED ::1:5432` | Migrate/seed loaded the wrong `.env`. Run from `backend/` or use `--prefix backend`. |
 | `password authentication failed` | `DB_PASSWORD` or `DATABASE_URL` in `backend/.env` is wrong. |
 
@@ -636,6 +800,8 @@ Owned by other stories. Do not assume they exist.
 - SRS v1.1: `docs/SRS_bbms.docx.pdf` (Sections 5, 6)
 - SAD v1.0: `docs/sad_bbms_09.pdf` (Sections 3.6, 3.9, 4.3, 4.4, ADR-04)
 - STP v1.0: `docs/test_plan_bbms.pdf` (Sections 5.1, 13.1, 13.2)
+- RTM and deviations register: `docs/RTM.md`, `docs/DEVIATIONS.md`
+- Browser compatibility notes: `docs/BROWSER_COMPATIBILITY.md`
 - Digital Personal Data Protection Act, 2023 (India)
 - `csrf-csrf` v4 and `express-session` documentation
 - `node-cron` documentation

@@ -20,11 +20,11 @@ ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
 -- 2. Seed Users for each role (Donor, Hospital/Patient, Staff, Admin)
 -- Default test password for all seed accounts is: Test@1234
 -- Verified bcrypt hash (10 salt rounds): $2b$10$w3OKVq0YKqTSozS8Neu.quLt9laFtz06c0SO8RE.r0nakZtKFJu5q
-INSERT INTO users (user_id, name, email, phone, password_hash, role, status) VALUES
-('USR-ADM01', 'System Administrator', 'admin@bloodbank.org', '9876543210', '$2b$10$w3OKVq0YKqTSozS8Neu.quLt9laFtz06c0SO8RE.r0nakZtKFJu5q', 'Admin', 'Active'),
-('USR-STF01', 'Staff Member Joy', 'staff@bloodbank.org', '9876543211', '$2b$10$w3OKVq0YKqTSozS8Neu.quLt9laFtz06c0SO8RE.r0nakZtKFJu5q', 'Staff', 'Active'),
-('USR-DNR01', 'John Doe (Donor)', 'john.doe@example.com', '9876543212', '$2b$10$w3OKVq0YKqTSozS8Neu.quLt9laFtz06c0SO8RE.r0nakZtKFJu5q', 'Donor', 'Active'),
-('USR-HSP01', 'City General Hospital', 'hospital@citygen.org', '9876543213', '$2b$10$w3OKVq0YKqTSozS8Neu.quLt9laFtz06c0SO8RE.r0nakZtKFJu5q', 'Hospital/Patient', 'Active')
+INSERT INTO users (user_id, name, email, phone, address, password_hash, role, status) VALUES
+('USR-ADM01', 'System Administrator', 'admin@bloodbank.org', '9876543210', 'Head Office, Bangalore', '$2b$10$w3OKVq0YKqTSozS8Neu.quLt9laFtz06c0SO8RE.r0nakZtKFJu5q', 'Admin', 'Active'),
+('USR-STF01', 'Staff Member Joy', 'staff@bloodbank.org', '9876543211', 'Blood Bank Unit, Bangalore', '$2b$10$w3OKVq0YKqTSozS8Neu.quLt9laFtz06c0SO8RE.r0nakZtKFJu5q', 'Staff', 'Active'),
+('USR-DNR01', 'John Doe (Donor)', 'john.doe@example.com', '9876543212', '12 MG Road, Bangalore', '$2b$10$w3OKVq0YKqTSozS8Neu.quLt9laFtz06c0SO8RE.r0nakZtKFJu5q', 'Donor', 'Active'),
+('USR-HSP01', 'City General Hospital', 'hospital@citygen.org', '9876543213', '100 Hospital Road, Bangalore', '$2b$10$w3OKVq0YKqTSozS8Neu.quLt9laFtz06c0SO8RE.r0nakZtKFJu5q', 'Hospital/Patient', 'Active')
 ON CONFLICT (user_id) DO NOTHING;
 
 -- 3. Seed Donors covering diverse blood groups (last_donation_date matches seeded donations)
@@ -60,3 +60,12 @@ ON CONFLICT (request_id) DO NOTHING;
 -- 7. Seed Initial Audit Log
 INSERT INTO audit_log (user_id, action, entity, entity_id, new_value) VALUES
 ('USR-ADM01', 'SYSTEM_INITIALIZATION', 'system_config', 'ALL', '{"message": "Initial seed data loaded successfully"}'::jsonb);
+-- Fill addresses for seeded users if the column was just added.
+UPDATE users SET address = 'Head Office, Bangalore'
+  WHERE user_id = 'USR-ADM01' AND address IS NULL;
+UPDATE users SET address = 'Blood Bank Unit, Bangalore'
+  WHERE user_id = 'USR-STF01' AND address IS NULL;
+UPDATE users SET address = '12 MG Road, Bangalore'
+  WHERE user_id = 'USR-DNR01' AND address IS NULL;
+UPDATE users SET address = '100 Hospital Road, Bangalore'
+  WHERE user_id = 'USR-HSP01' AND address IS NULL;
