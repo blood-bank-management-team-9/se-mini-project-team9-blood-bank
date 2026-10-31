@@ -12,22 +12,19 @@ describe('Role-Based Navigation Matrix (SAD 4.3 & 4.5)', () => {
     expect(items).not.toContain('request-blood');
   });
 
-  it('provides Staff with donor registration, stock, requests queue, and discard', () => {
+  it('provides Staff with donor registration, stock, requests queue, and search', () => {
     const items = getNavigationItems('Staff').map((i) => i.id);
     expect(items).toContain('dashboard');
     expect(items).toContain('register-donor');
     expect(items).toContain('record-donation');
     expect(items).toContain('stock');
     expect(items).toContain('requests');
-    expect(items).toContain('discard');
     expect(items).toContain('search-donors-stock');
   });
 
-  it('provides Donor with donation history and eligibility check', () => {
+  it('provides Donor with dashboard and stock search', () => {
     const items = getNavigationItems('Donor').map((i) => i.id);
     expect(items).toContain('dashboard');
-    expect(items).toContain('history');
-    expect(items).toContain('eligibility');
     expect(items).not.toContain('users');
   });
 

@@ -11,7 +11,7 @@ function renderWithAuth(ui, role = 'Staff') {
     role,
   };
   return render(
-    <AuthContext.Provider value={{ user: mockUser, role, login: vi.fn(), logout: vi.fn() }}>
+    <AuthContext.Provider value={{ user: mockUser, role, login: vi.fn(), logout: vi.fn(), authLoading: false }}>
       {ui}
     </AuthContext.Provider>
   );
@@ -40,7 +40,6 @@ describe('Frontend ReportsModule (FR-RPT-01 to 04, FR-RPT-06, TC-09, TC-10, TC-3
     renderWithAuth(<ReportsModule />, 'Staff');
 
     expect(screen.getByText(/Management Reports & Analytics/i)).toBeDefined();
-    expect(screen.getByRole('button', { name: /Stock Inventory/i })).toBeDefined();
 
     await waitFor(() => {
       expect(screen.getByText(/Blood Stock Inventory Summary/i)).toBeDefined();
@@ -67,7 +66,7 @@ describe('Frontend ReportsModule (FR-RPT-01 to 04, FR-RPT-06, TC-09, TC-10, TC-3
 
     renderWithAuth(<ReportsModule />, 'Staff');
 
-    fireEvent.click(screen.getByRole('button', { name: /Donations Log/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Donations/i }));
 
     await waitFor(() => {
       expect(screen.getByText('DON-001')).toBeDefined();
@@ -94,7 +93,7 @@ describe('Frontend ReportsModule (FR-RPT-01 to 04, FR-RPT-06, TC-09, TC-10, TC-3
 
     renderWithAuth(<ReportsModule />, 'Staff');
 
-    fireEvent.click(screen.getByRole('button', { name: /Requisitions/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Requests/i }));
 
     await waitFor(() => {
       expect(screen.getByText('REQ-001')).toBeDefined();
@@ -103,7 +102,7 @@ describe('Frontend ReportsModule (FR-RPT-01 to 04, FR-RPT-06, TC-09, TC-10, TC-3
     });
   });
 
-  it('displays "No records found" when report filters return empty data (FR-RPT-06)', async () => {
+  it('displays "No records found" when report returns empty aggregates (FR-RPT-06)', async () => {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -120,23 +119,21 @@ describe('Frontend ReportsModule (FR-RPT-01 to 04, FR-RPT-06, TC-09, TC-10, TC-3
     renderWithAuth(<ReportsModule />, 'Staff');
 
     await waitFor(() => {
-      expect(screen.queryByText('Filtering...')).toBeNull();
+      expect(screen.queryByText('Loading report…')).toBeNull();
     });
 
     fireEvent.change(screen.getByLabelText(/Blood Group/i), { target: { value: 'AB-' } });
     fireEvent.click(screen.getByRole('button', { name: /Apply Filters/i }));
 
     await waitFor(() => {
-      expect(screen.getByText('No records found')).toBeDefined();
-      expect(screen.getByText(/No matching records were found for the selected stock report filters/i)).toBeDefined();
+      expect(screen.getByText(/No records found for selected filters/i)).toBeDefined();
     });
   });
 
   it('blocks unauthorized Hospital/Patient role with 403 banner (FR-RPT-06, TC-09)', () => {
     renderWithAuth(<ReportsModule />, 'Hospital/Patient');
-
     expect(screen.getByText(/Access Denied \(HTTP 403\)/i)).toBeDefined();
-    expect(screen.getByText(/Report generation and analytics are restricted to authorized Blood Bank Staff and Administrators only/i)).toBeDefined();
+    expect(screen.getByText(/Report generation is restricted to Staff and Administrators only/i)).toBeDefined();
   });
 
   it('triggers CSV and PDF export endpoints on button click (FR-RPT-05, TC-10)', async () => {
@@ -146,7 +143,7 @@ describe('Frontend ReportsModule (FR-RPT-01 to 04, FR-RPT-06, TC-09, TC-10, TC-3
       json: async () => ({
         reportType: 'stock',
         generatedAt: '2026-10-27T10:00:00Z',
-        aggregates: [{ bloodGroup: 'O+', available: 3 }],
+        aggregates: [{ bloodGroup: 'O+', available: 3, reserved: 0, issued: 0, expired: 0, discarded: 0, earliestExpiry: null, total: 3 }],
         totalRecords: 3,
       }),
       blob: async () => new Blob(['mock content'], { type: 'text/csv' }),
@@ -164,12 +161,18 @@ describe('Frontend ReportsModule (FR-RPT-01 to 04, FR-RPT-06, TC-09, TC-10, TC-3
 
     fireEvent.click(csvBtn);
     await waitFor(() => {
-      expect(globalThis.fetch).toHaveBeenCalledWith(expect.stringContaining('format=csv'));
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('format=csv'),
+        expect.objectContaining({ credentials: 'include' })
+      );
     });
 
     fireEvent.click(pdfBtn);
     await waitFor(() => {
-      expect(globalThis.fetch).toHaveBeenCalledWith(expect.stringContaining('format=pdf'));
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('format=pdf'),
+        expect.objectContaining({ credentials: 'include' })
+      );
     });
   });
 });

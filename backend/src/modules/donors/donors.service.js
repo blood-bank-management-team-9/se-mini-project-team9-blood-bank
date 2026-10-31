@@ -120,9 +120,15 @@ async function getOwnDonationHistory(userId, role) {
     );
   }
 
+  const config = await repo.getEligibilityConfig();
+  const eligibility = evaluateEligibility(donor, config);
   const rows = await repo.listDonationHistory(userId);
+
   return {
     donorId: donor.donor_id,
+    bloodGroup: donor.blood_group,
+    gender: donor.gender,
+    eligibility: eligibility,
     donations: rows.map((row) => ({
       donationId: row.donation_id,
       collectionDate: row.collection_date,

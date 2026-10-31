@@ -9,23 +9,23 @@ export function getNavigationItems(role) {
         { id: 'users', label: 'User Accounts' },
         { id: 'audit', label: 'System Audit Log' },
         { id: 'reports', label: 'Reports' },
+        { id: 'stock', label: 'Blood Inventory' },
       ];
     case 'Staff':
       return [
         { id: 'dashboard', label: 'Staff Dashboard' },
         { id: 'search-donors-stock', label: 'Search Stock & Donors' },
         { id: 'register-donor', label: 'Register Donor' },
+        { id: 'donors', label: 'Donor Registry' },
         { id: 'record-donation', label: 'Record Donation' },
         { id: 'stock', label: 'Blood Inventory' },
         { id: 'requests', label: 'Process Requests Queue' },
-        { id: 'discard', label: 'Discard Unit' },
         { id: 'reports', label: 'Reports' },
       ];
     case 'Donor':
       return [
         { id: 'dashboard', label: 'Donor Dashboard' },
-        { id: 'history', label: 'My Donation History' },
-        { id: 'eligibility', label: 'Check Eligibility' },
+        { id: 'search-stock', label: 'Search Stock' },
       ];
     case 'Hospital/Patient':
       return [

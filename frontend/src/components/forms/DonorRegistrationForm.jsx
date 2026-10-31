@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { validateDonorField } from '../../utils/validation';
+import { apiPost } from '../../services/api';
 
 export default function DonorRegistrationForm({ onSuccess, onCancel }) {
   const [formData, setFormData] = useState({
@@ -40,58 +41,35 @@ export default function DonorRegistrationForm({ onSuccess, onCancel }) {
       const err = validateDonorField(key, formData[key]);
       if (err) newErrors[key] = err;
     });
-
     setErrors(newErrors);
-
-    if (Object.keys(newErrors).length > 0) {
-      return;
-    }
+    if (Object.keys(newErrors).length > 0) return;
 
     setIsSubmitting(true);
     setStatusMessage(null);
 
     try {
-      const res = await fetch('/api/donors', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+      // Send weightKg as a number
+      await apiPost('/api/donors', {
+        ...formData,
+        weightKg: parseFloat(formData.weightKg),
       });
-
-      if (res.ok) {
-        setStatusMessage({ type: 'success', text: 'Donor successfully registered into live database!' });
-        // Only redirect on SUCCESS!
-        timerRef.current = setTimeout(() => {
-          if (onSuccess) onSuccess();
-        }, 2000);
-      } else {
-        const data = await res.json().catch(() => ({}));
-        // SAD 4.4 error contract: { error: { code, message, fields[] } }
-        const errorObj = data.error || {};
-        const errorMsg = errorObj.message || `Registration rejected (HTTP ${res.status})`;
-
-        setStatusMessage({
-          type: 'error',
-          text: errorMsg,
+      setStatusMessage({ type: 'success', text: 'Donor successfully registered into live database!' });
+      timerRef.current = setTimeout(() => {
+        if (onSuccess) onSuccess();
+      }, 2000);
+    } catch (err) {
+      if (err.type === 'validation') {
+        const serverFields = {};
+        (err.fields || []).forEach((f) => {
+          if (f.field && f.message) serverFields[f.field] = f.message;
         });
-
-        // Map server fields[] to inline form errors
-        if (Array.isArray(errorObj.fields)) {
-          const serverFields = {};
-          errorObj.fields.forEach((f) => {
-            if (f.field && f.message) {
-              serverFields[f.field] = f.message;
-            }
-          });
-          setErrors((prev) => ({ ...prev, ...serverFields }));
-        }
-        // Do NOT redirect on failure!
+        setErrors((prev) => ({ ...prev, ...serverFields }));
+        setStatusMessage({ type: 'error', text: err.message });
+      } else if (err.type === 'network') {
+        setStatusMessage({ type: 'error', text: 'Cannot reach the server. Is the backend running?' });
+      } else {
+        setStatusMessage({ type: 'error', text: err.message || 'Registration failed' });
       }
-    } catch {
-      setStatusMessage({
-        type: 'info',
-        text: '[Preview Mode] Form validated successfully (TC-22, TC-36). (Backend API offline)',
-      });
-      // Do NOT auto-redirect on API error
     } finally {
       setIsSubmitting(false);
     }
@@ -112,7 +90,7 @@ export default function DonorRegistrationForm({ onSuccess, onCancel }) {
 
       {statusMessage && (
         <div
-          className={`alert-banner ${statusMessage.type === 'success' ? 'info' : statusMessage.type === 'error' ? 'danger' : 'warning'}`}
+          className={`alert-banner ${statusMessage.type === 'success' ? 'info' : 'danger'}`}
           role="status"
           style={{ marginBottom: '1.25rem' }}
         >
@@ -128,21 +106,14 @@ export default function DonorRegistrationForm({ onSuccess, onCancel }) {
               Full Name <span className="req">*</span>
             </label>
             <input
-              id="fullName"
-              name="fullName"
-              type="text"
+              id="fullName" name="fullName" type="text"
               className={`form-input ${errors.fullName ? 'has-error' : ''}`}
               placeholder="e.g. Ramesh Kumar"
-              value={formData.fullName}
-              onChange={handleChange}
+              value={formData.fullName} onChange={handleChange}
               aria-invalid={Boolean(errors.fullName)}
               aria-describedby={errors.fullName ? 'fullName-error' : undefined}
             />
-            {errors.fullName && (
-              <div id="fullName-error" className="inline-error" role="alert">
-                {errors.fullName}
-              </div>
-            )}
+            {errors.fullName && <div id="fullName-error" className="inline-error" role="alert">{errors.fullName}</div>}
           </div>
 
           {/* Date of Birth */}
@@ -151,20 +122,13 @@ export default function DonorRegistrationForm({ onSuccess, onCancel }) {
               Date of Birth <span className="req">*</span>
             </label>
             <input
-              id="dob"
-              name="dob"
-              type="date"
+              id="dob" name="dob" type="date"
               className={`form-input ${errors.dob ? 'has-error' : ''}`}
-              value={formData.dob}
-              onChange={handleChange}
+              value={formData.dob} onChange={handleChange}
               aria-invalid={Boolean(errors.dob)}
               aria-describedby={errors.dob ? 'dob-error' : undefined}
             />
-            {errors.dob && (
-              <div id="dob-error" className="inline-error" role="alert">
-                {errors.dob}
-              </div>
-            )}
+            {errors.dob && <div id="dob-error" className="inline-error" role="alert">{errors.dob}</div>}
           </div>
 
           {/* Gender */}
@@ -172,13 +136,7 @@ export default function DonorRegistrationForm({ onSuccess, onCancel }) {
             <label className="form-label" htmlFor="gender">
               Gender <span className="req">*</span>
             </label>
-            <select
-              id="gender"
-              name="gender"
-              className="form-select"
-              value={formData.gender}
-              onChange={handleChange}
-            >
+            <select id="gender" name="gender" className="form-select" value={formData.gender} onChange={handleChange}>
               <option value="Male">Male (90-day donation gap)</option>
               <option value="Female">Female (120-day donation gap)</option>
               <option value="Other">Other (120-day donation gap)</option>
@@ -190,89 +148,59 @@ export default function DonorRegistrationForm({ onSuccess, onCancel }) {
             <label className="form-label" htmlFor="bloodGroup">
               Blood Group <span className="req">*</span>
             </label>
-            <select
-              id="bloodGroup"
-              name="bloodGroup"
-              className="form-select"
-              value={formData.bloodGroup}
-              onChange={handleChange}
-            >
+            <select id="bloodGroup" name="bloodGroup" className="form-select" value={formData.bloodGroup} onChange={handleChange}>
               {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map((bg) => (
                 <option key={bg} value={bg}>{bg}</option>
               ))}
             </select>
           </div>
 
-          {/* Body Weight in kg */}
+          {/* Body Weight */}
           <div className="form-group">
             <label className="form-label" htmlFor="weightKg">
               Body Weight (kg) <span className="req">*</span>
             </label>
             <input
-              id="weightKg"
-              name="weightKg"
-              type="number"
-              step="0.5"
+              id="weightKg" name="weightKg" type="number" step="0.5"
               className={`form-input ${errors.weightKg ? 'has-error' : ''}`}
               placeholder="Minimum 45 kg"
-              value={formData.weightKg}
-              onChange={handleChange}
+              value={formData.weightKg} onChange={handleChange}
               aria-invalid={Boolean(errors.weightKg)}
               aria-describedby={errors.weightKg ? 'weightKg-error' : undefined}
             />
-            {errors.weightKg && (
-              <div id="weightKg-error" className="inline-error" role="alert">
-                {errors.weightKg}
-              </div>
-            )}
+            {errors.weightKg && <div id="weightKg-error" className="inline-error" role="alert">{errors.weightKg}</div>}
           </div>
 
-          {/* Phone Number */}
+          {/* Phone */}
           <div className="form-group">
             <label className="form-label" htmlFor="phone">
               Phone Number (10 digits) <span className="req">*</span>
             </label>
             <input
-              id="phone"
-              name="phone"
-              type="tel"
-              maxLength="10"
+              id="phone" name="phone" type="tel" maxLength="10"
               className={`form-input ${errors.phone ? 'has-error' : ''}`}
               placeholder="9876543210"
-              value={formData.phone}
-              onChange={handleChange}
+              value={formData.phone} onChange={handleChange}
               aria-invalid={Boolean(errors.phone)}
               aria-describedby={errors.phone ? 'phone-error' : undefined}
             />
-            {errors.phone && (
-              <div id="phone-error" className="inline-error" role="alert">
-                {errors.phone}
-              </div>
-            )}
+            {errors.phone && <div id="phone-error" className="inline-error" role="alert">{errors.phone}</div>}
           </div>
 
-          {/* Postal PIN Code */}
+          {/* PIN Code */}
           <div className="form-group">
             <label className="form-label" htmlFor="pinCode">
               Postal PIN Code (6 digits) <span className="req">*</span>
             </label>
             <input
-              id="pinCode"
-              name="pinCode"
-              type="text"
-              maxLength="6"
+              id="pinCode" name="pinCode" type="text" maxLength="6"
               className={`form-input ${errors.pinCode ? 'has-error' : ''}`}
               placeholder="560001"
-              value={formData.pinCode}
-              onChange={handleChange}
+              value={formData.pinCode} onChange={handleChange}
               aria-invalid={Boolean(errors.pinCode)}
               aria-describedby={errors.pinCode ? 'pinCode-error' : undefined}
             />
-            {errors.pinCode && (
-              <div id="pinCode-error" className="inline-error" role="alert">
-                {errors.pinCode}
-              </div>
-            )}
+            {errors.pinCode && <div id="pinCode-error" className="inline-error" role="alert">{errors.pinCode}</div>}
           </div>
 
           {/* City */}
@@ -281,43 +209,29 @@ export default function DonorRegistrationForm({ onSuccess, onCancel }) {
               City <span className="req">*</span>
             </label>
             <input
-              id="city"
-              name="city"
-              type="text"
+              id="city" name="city" type="text"
               className={`form-input ${errors.city ? 'has-error' : ''}`}
-              value={formData.city}
-              onChange={handleChange}
+              value={formData.city} onChange={handleChange}
               aria-invalid={Boolean(errors.city)}
               aria-describedby={errors.city ? 'city-error' : undefined}
             />
-            {errors.city && (
-              <div id="city-error" className="inline-error" role="alert">
-                {errors.city}
-              </div>
-            )}
+            {errors.city && <div id="city-error" className="inline-error" role="alert">{errors.city}</div>}
           </div>
 
-          {/* Email Address */}
+          {/* Email */}
           <div className="form-group full-width">
             <label className="form-label" htmlFor="email">
               Email Address (Optional)
             </label>
             <input
-              id="email"
-              name="email"
-              type="email"
+              id="email" name="email" type="email"
               className={`form-input ${errors.email ? 'has-error' : ''}`}
               placeholder="donor@example.com"
-              value={formData.email}
-              onChange={handleChange}
+              value={formData.email} onChange={handleChange}
               aria-invalid={Boolean(errors.email)}
               aria-describedby={errors.email ? 'email-error' : undefined}
             />
-            {errors.email && (
-              <div id="email-error" className="inline-error" role="alert">
-                {errors.email}
-              </div>
-            )}
+            {errors.email && <div id="email-error" className="inline-error" role="alert">{errors.email}</div>}
           </div>
         </div>
 
@@ -328,7 +242,7 @@ export default function DonorRegistrationForm({ onSuccess, onCancel }) {
             </button>
           )}
           <button type="submit" className="btn-primary" disabled={isSubmitting}>
-            {isSubmitting ? 'Submitting...' : 'Register Donor & Verify Eligibility'}
+            {isSubmitting ? 'Submitting…' : 'Register Donor & Verify Eligibility'}
           </button>
         </div>
       </form>

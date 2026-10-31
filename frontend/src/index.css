@@ -597,6 +597,36 @@ body {
   font-weight: 700;
 }
 
+.badge-available {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.badge-reserved {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.badge-expired {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.badge-discarded {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.badge-cancelled {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.badge-normal {
+  background: #f1f5f9;
+  color: #475569;
+}
+
 /* Responsive adjustments for screens >= 360px (NFR-QUAL-05) */
 @media (max-width: 768px) {
   .header-inner {

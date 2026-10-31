@@ -1,76 +1,29 @@
-import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+} from 'react';
+import { apiGet, apiPost, setUnauthenticatedCallback } from '../services/api';
 
 export const AuthContext = createContext();
 
-// Seed user accounts aligned with ADR-04 and SAD 3.6
-export const DEFAULT_USERS = {
-  Staff: {
-    id: 'USR-STF01',
-    name: 'Nurse Joy',
-    email: 'staff@bloodbank.org',
-    role: 'Staff',
-    phone: '9876543211',
-  },
-  Admin: {
-    id: 'USR-ADM01',
-    name: 'System Administrator',
-    email: 'admin@bloodbank.org',
-    role: 'Admin',
-    phone: '9876543210',
-  },
-  Donor: {
-    id: 'USR-DNR01',
-    name: 'John Doe',
-    email: 'john.doe@example.com',
-    role: 'Donor',
-    phone: '9876543212',
-    bloodGroup: 'O+',
-    lastDonationDate: '2026-10-01',
-    gender: 'Male',
-  },
-  'Hospital/Patient': {
-    id: 'USR-HSP01',
-    name: 'City General Hospital',
-    email: 'hospital@citygen.org',
-    role: 'Hospital/Patient',
-    phone: '9876543213',
-  },
-};
-
-// 15-minute idle timeout in milliseconds per ADR-04 (15 * 60 * 1000)
 const IDLE_TIMEOUT_MS = 15 * 60 * 1000;
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(() => {
-    // In dev / preview mode, default to Staff; can be switched via preview role selector
-    return DEFAULT_USERS.Staff;
-  });
+  const [user, setUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
 
   const lastActivityRef = useRef(Date.now());
   const idleTimerRef = useRef(null);
 
-  const logout = useCallback(() => {
-    setUser(null);
-  }, []);
-
-  const login = useCallback((role = 'Staff') => {
-    setUser(DEFAULT_USERS[role] || DEFAULT_USERS.Staff);
+  const handleActivity = useCallback(() => {
     lastActivityRef.current = Date.now();
   }, []);
 
-  const switchRole = useCallback((newRole) => {
-    if (DEFAULT_USERS[newRole]) {
-      setUser(DEFAULT_USERS[newRole]);
-      lastActivityRef.current = Date.now();
-    }
-  }, []);
-
-  // Enforce ADR-04: 15-minute idle expiry
   useEffect(() => {
-    const handleActivity = () => {
-      lastActivityRef.current = Date.now();
-    };
-
     window.addEventListener('mousemove', handleActivity);
     window.addEventListener('keydown', handleActivity);
     window.addEventListener('click', handleActivity);
@@ -78,25 +31,105 @@ export function AuthProvider({ children }) {
 
     idleTimerRef.current = setInterval(() => {
       if (user && Date.now() - lastActivityRef.current > IDLE_TIMEOUT_MS) {
-        console.warn('Session expired due to 15 minutes of inactivity (ADR-04).');
-        logout();
+        apiPost('/api/auth/logout').catch(() => {});
+        setUser(false);
       }
-    }, 30000); // Check every 30 seconds
+    }, 30_000);
 
     return () => {
       window.removeEventListener('mousemove', handleActivity);
       window.removeEventListener('keydown', handleActivity);
       window.removeEventListener('click', handleActivity);
       window.removeEventListener('scroll', handleActivity);
-      if (idleTimerRef.current) clearInterval(idleTimerRef.current);
+      clearInterval(idleTimerRef.current);
     };
-  }, [user, logout]);
+  }, [user, handleActivity]);
 
-  return (
-    <AuthContext.Provider value={{ user, role: user?.role, switchRole, logout, login }}>
-      {children}
-    </AuthContext.Provider>
-  );
+  useEffect(() => {
+    setUnauthenticatedCallback(() => setUser(false));
+  }, []);
+
+  // Restore session on mount. /me returns 403 for Staff and Admin (FR-AUTH-06
+  // restricts it to Donor / Hospital-Patient). Fall back to a lightweight
+  // session probe so Staff/Admin are not logged out on refresh.
+  useEffect(() => {
+    let cancelled = false;
+
+    apiGet('/api/auth/me')
+      .then((profile) => {
+        if (!cancelled) {
+          setUser(profile);
+          setAuthLoading(false);
+        }
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        if (err.type === 'forbidden') {
+          // Staff or Admin: /me is forbidden. Try a Staff-only probe.
+          apiGet('/api/auth/staff-only')
+            .then((staffData) => {
+              if (!cancelled) {
+                setUser({
+                  ...(staffData.user || {}),
+                  userId: staffData.user?.userId,
+                  name: staffData.user?.name,
+                  role: staffData.user?.role,
+                });
+                setAuthLoading(false);
+              }
+            })
+            .catch(() => {
+              if (!cancelled) {
+                setUser(false);
+                setAuthLoading(false);
+              }
+            });
+        } else {
+          setUser(false);
+          setAuthLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const login = useCallback(async ({ email, password }) => {
+    const data = await apiPost('/api/auth/login', { email, password });
+    // Backend returns { userId, name, role } directly, not wrapped.
+    const loggedIn = data.user || data;
+    setUser(loggedIn);
+    lastActivityRef.current = Date.now();
+    return loggedIn;
+  }, []);
+
+  const logout = useCallback(async () => {
+    try {
+      await apiPost('/api/auth/logout');
+    } catch {
+      // clear client state regardless
+    }
+    setUser(false);
+  }, []);
+
+  const refreshProfile = useCallback(async () => {
+    const profile = await apiGet('/api/auth/me');
+    setUser(profile);
+    return profile;
+  }, []);
+
+  const value = {
+    user,
+    role: user?.role ?? null,
+    authLoading,
+    login,
+    logout,
+    refreshProfile,
+    setUser,
+  };
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {
