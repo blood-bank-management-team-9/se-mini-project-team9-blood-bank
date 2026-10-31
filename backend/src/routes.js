@@ -11,6 +11,4 @@ router.use('/reports', require('./modules/reports/reports.routes'));
 
 router.use('/donations', require('./modules/donations/donations.routes'));
 
-router.use('/donations', require('./modules/donations/donations.routes'));
-
 module.exports = router;

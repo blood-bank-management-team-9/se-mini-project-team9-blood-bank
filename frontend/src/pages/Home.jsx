@@ -9,63 +9,121 @@ import DonorRegistrationForm from '../components/forms/DonorRegistrationForm';
 import BloodRequestForm from '../components/forms/BloodRequestForm';
 import SearchModule from '../components/search/SearchModule';
 import ReportsModule from '../components/reports/ReportsModule';
+import LoginPage from './LoginPage';
+import RegisterPage from './RegisterPage';
+import ForgotPasswordPage from './ForgotPasswordPage';
+import ResetPasswordPage from './ResetPasswordPage';
+import ProfilePage from './ProfilePage';
+import RecordDonationPage from './RecordDonationPage';
+import RequestsQueuePage from './RequestsQueuePage';
+import StockPage from './StockPage';
+import DonorsPage from './DonorsPage';
+import UsersPage from './UsersPage';
+import AuditLogPage from './AuditLogPage';
 import { getNavigationItems } from '../utils/navigation';
 import { getHealth } from '../services/api';
 
 export default function Home() {
-  const { user, role } = useAuth();
-  const [activeTab, setActiveTab] = useState('dashboard');
-  const [healthStatus, setHealthStatus] = useState('Checking API...');
+  const { user, role, authLoading } = useAuth();
+  const [activeTab, setActiveTab] = useState('login');
+  const [healthStatus, setHealthStatus] = useState('Checking API…');
+  const [resetToken, setResetToken] = useState('');
 
+  // Navigate helper — handles special params
+  const handleNavigate = (tab, params = {}) => {
+    if (params.token) setResetToken(params.token);
+    setActiveTab(tab);
+  };
+
+  // Once auth resolves, redirect appropriately
+  useEffect(() => {
+    if (authLoading) return;
+    if (user) {
+      // Logged in — go to dashboard if on an auth page
+      if (['login', 'register', 'forgot-password', 'reset-password'].includes(activeTab)) {
+        setActiveTab('dashboard');
+      }
+    } else {
+      // Not logged in — only allow public pages
+      const publicTabs = ['login', 'register', 'forgot-password', 'reset-password'];
+      if (!publicTabs.includes(activeTab)) {
+        setActiveTab('login');
+      }
+    }
+  }, [user, authLoading]); // eslint-disable-line
+
+  // Guard: if current tab is not in role's nav, reset to dashboard
+  useEffect(() => {
+    if (!user || authLoading) return;
+    const allowed = getNavigationItems(role).map((i) => i.id);
+    // Add pages that are always accessible when logged in
+    const alwaysAllowed = ['dashboard', 'profile', 'register-donor', 'request-blood',
+      'search-stock', 'search-donors-stock', 'reports', 'record-donation',
+      'requests', 'stock', 'donors', 'users', 'audit'];
+    if (!allowed.includes(activeTab) && !alwaysAllowed.includes(activeTab)) {
+      setActiveTab('dashboard');
+    }
+  }, [role, activeTab, user, authLoading]);
+
+  // Health check
   useEffect(() => {
     getHealth()
       .then((data) => setHealthStatus(`Online (${data.status || 'healthy'})`))
-      .catch(() => setHealthStatus('Offline / Standalone Preview'));
+      .catch(() => setHealthStatus('Offline'));
   }, []);
 
-  // Guard: if current active tab is not accessible by the new role, reset to dashboard
-  useEffect(() => {
-    const allowed = getNavigationItems(role).map((i) => i.id);
-    if (!allowed.includes(activeTab)) {
-      setActiveTab('dashboard');
-    }
-  }, [role, activeTab]);
-
   const renderContent = () => {
-    if (!user) {
+    if (authLoading) {
       return (
         <div style={{ textAlign: 'center', padding: '4rem 1rem' }}>
-          <h1 style={{ fontSize: '2rem', marginBottom: '1rem', color: 'var(--slate-900)' }}>
-            Blood Bank Management System
-          </h1>
-          <p style={{ color: 'var(--slate-600)', maxWidth: '600px', margin: '0 auto 1.5rem auto' }}>
-            Mission-critical blood inventory and donor management platform.
-            Please sign in using your authorized account.
-          </p>
+          <p style={{ color: 'var(--slate-500)' }}>Restoring session…</p>
         </div>
       );
     }
 
-    // Search Module (Sprint 2 - Issue #21)
-    if (activeTab === 'search-stock' || activeTab === 'search-donors-stock') {
-      return <SearchModule defaultTab={activeTab === 'search-donors-stock' ? 'stock' : 'stock'} />;
+    // ── Public auth pages ──────────────────────────────────────────────────────
+    if (activeTab === 'login') return <LoginPage onNavigate={handleNavigate} />;
+    if (activeTab === 'register') return <RegisterPage onNavigate={handleNavigate} />;
+    if (activeTab === 'forgot-password') return <ForgotPasswordPage onNavigate={handleNavigate} />;
+    if (activeTab === 'reset-password') return <ResetPasswordPage token={resetToken} onNavigate={handleNavigate} />;
+
+    // ── If not logged in after auth pages, redirect to login ──────────────────
+    if (!user) {
+      return <LoginPage onNavigate={handleNavigate} />;
     }
 
-    // Reports Module (Sprint 2 - Issue #22)
-    if (activeTab === 'reports') {
-      return <ReportsModule />;
-    }
+    // ── Profile (all roles) ───────────────────────────────────────────────────
+    if (activeTab === 'profile') return <ProfilePage />;
 
-    // Forms
+    // ── Search ────────────────────────────────────────────────────────────────
+    if (activeTab === 'search-stock') return <SearchModule defaultTab="stock" />;
+    if (activeTab === 'search-donors-stock') return <SearchModule defaultTab="donors" />;
+
+    // ── Reports ───────────────────────────────────────────────────────────────
+    if (activeTab === 'reports') return <ReportsModule />;
+
+    // ── Staff forms & pages ────────────────────────────────────────────────────
     if (activeTab === 'register-donor') {
       return (
         <DonorRegistrationForm
-          onSuccess={() => setActiveTab('dashboard')}
+          onSuccess={() => setActiveTab('donors')}
           onCancel={() => setActiveTab('dashboard')}
         />
       );
     }
+    if (activeTab === 'record-donation') {
+      return (
+        <RecordDonationPage
+          onSuccess={() => setActiveTab('stock')}
+          onCancel={() => setActiveTab('dashboard')}
+        />
+      );
+    }
+    if (activeTab === 'requests') return <RequestsQueuePage />;
+    if (activeTab === 'stock') return <StockPage />;
+    if (activeTab === 'donors') return <DonorsPage onNavigate={handleNavigate} />;
 
+    // ── Hospital forms ─────────────────────────────────────────────────────────
     if (activeTab === 'request-blood') {
       return (
         <BloodRequestForm
@@ -74,32 +132,34 @@ export default function Home() {
         />
       );
     }
+    if (activeTab === 'track-requests') {
+      return <HospitalDashboard onNavigate={handleNavigate} />;
+    }
 
-    // Role Dashboards (SAD 4.5)
+    // ── Admin pages ────────────────────────────────────────────────────────────
+    if (activeTab === 'users') return <UsersPage />;
+    if (activeTab === 'audit') return <AuditLogPage />;
+
+    // ── Role Dashboards ────────────────────────────────────────────────────────
     if (activeTab === 'dashboard') {
       switch (role) {
-        case 'Admin':
-          return <AdminDashboard onNavigate={setActiveTab} />;
-        case 'Staff':
-          return <StaffDashboard onNavigate={setActiveTab} />;
-        case 'Donor':
-          return <DonorDashboard onNavigate={setActiveTab} />;
-        case 'Hospital/Patient':
-          return <HospitalDashboard onNavigate={setActiveTab} />;
-        default:
-          return <StaffDashboard onNavigate={setActiveTab} />;
+        case 'Admin':    return <AdminDashboard onNavigate={handleNavigate} />;
+        case 'Staff':    return <StaffDashboard onNavigate={handleNavigate} />;
+        case 'Donor':    return <DonorDashboard onNavigate={handleNavigate} />;
+        case 'Hospital/Patient': return <HospitalDashboard onNavigate={handleNavigate} />;
+        default:         return <StaffDashboard onNavigate={handleNavigate} />;
       }
     }
 
-    // Specific Views or Stubbed Modules for Sprint 2
+    // ── Fallback stub for any unimplemented tab ────────────────────────────────
     const currentItem = getNavigationItems(role).find((i) => i.id === activeTab);
     return (
-      <div className="panel" style={{ textAlign: 'center', padding: '3rem 1.5rem' }}>
+      <div className="panel" style={{ textAlign: 'center', padding: '3rem 1.5rem', maxWidth: '600px', margin: '2rem auto' }}>
         <h2 className="panel-title" style={{ fontSize: '1.5rem', marginBottom: '0.75rem' }}>
-          {currentItem ? currentItem.label : 'Module Overview'}
+          {currentItem ? currentItem.label : 'Module'}
         </h2>
         <p style={{ color: 'var(--slate-600)', maxWidth: '540px', margin: '0 auto 1.5rem auto' }}>
-          This module is assigned under <strong>Sprint 2</strong> (scheduled for October 24–30 as per the team backlog). The interface shell and navigation routing are fully mapped.
+          Not yet implemented — see <code>backend/README.md</code>
         </p>
         <button type="button" className="btn-primary" onClick={() => setActiveTab('dashboard')}>
           ← Return to Dashboard
@@ -110,7 +170,7 @@ export default function Home() {
 
   return (
     <div className="app-shell">
-      <Navbar activeTab={activeTab} onSelectTab={setActiveTab} />
+      <Navbar activeTab={activeTab} onSelectTab={handleNavigate} />
       <main className="app-main">
         {renderContent()}
       </main>
@@ -128,10 +188,15 @@ export default function Home() {
         margin: '0 auto',
         width: '100%',
         flexWrap: 'wrap',
-        gap: '0.5rem'
+        gap: '0.5rem',
       }}>
         <span>BBMS Blood Bank Management System — Team 9</span>
-        <span>API Status: <strong style={{ color: healthStatus.includes('Online') ? 'var(--success)' : 'var(--slate-600)' }}>{healthStatus}</strong></span>
+        <span>
+          API Status:{' '}
+          <strong style={{ color: healthStatus.includes('Online') ? 'var(--success)' : 'var(--slate-600)' }}>
+            {healthStatus}
+          </strong>
+        </span>
       </footer>
     </div>
   );

@@ -1,20 +1,56 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { apiGet } from '../../services/api';
 
 export default function StaffDashboard({ onNavigate }) {
-  // Complete stock inventory per TC-28 (Available, Reserved, Issued, Expired, Discarded)
-  const stockData = [
-    { group: 'A+', available: 8, reserved: 1, issued: 12, expired: 0, discarded: 0, expiringSoon: 1 },
-    { group: 'A-', available: 3, reserved: 0, issued: 4, expired: 0, discarded: 0, expiringSoon: 0 },
-    { group: 'B+', available: 12, reserved: 2, issued: 15, expired: 1, discarded: 0, expiringSoon: 1 },
-    { group: 'B-', available: 4, reserved: 0, issued: 2, expired: 0, discarded: 0, expiringSoon: 0 },
-    { group: 'AB+', available: 6, reserved: 1, issued: 5, expired: 0, discarded: 0, expiringSoon: 0 },
-    { group: 'AB-', available: 2, reserved: 0, issued: 1, expired: 0, discarded: 0, expiringSoon: 0 },
-    { group: 'O+', available: 15, reserved: 3, issued: 20, expired: 0, discarded: 0, expiringSoon: 1 },
-    { group: 'O-', available: 2, reserved: 1, issued: 6, expired: 0, discarded: 1, expiringSoon: 0 },
-  ];
+  const [summary, setSummary] = useState(null);
+  const [stockData, setStockData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    Promise.all([
+      apiGet('/api/stock/summary'),
+      apiGet('/api/stock/units'),
+    ])
+      .then(([sum, unitsData]) => {
+        setSummary(sum);
+        // Build per-group aggregates from the units list
+        const units = unitsData.units ?? unitsData ?? [];
+        const GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+        const now = new Date();
+        const sevenDays = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+        const grouped = GROUPS.map((group) => {
+          const groupUnits = units.filter((u) => u.bloodGroup === group);
+          const available = groupUnits.filter((u) => u.status === 'Available').length;
+          const reserved  = groupUnits.filter((u) => u.status === 'Reserved').length;
+          const issued    = groupUnits.filter((u) => u.status === 'Issued').length;
+          const expired   = groupUnits.filter((u) => u.status === 'Expired').length;
+          const discarded = groupUnits.filter((u) => u.status === 'Discarded').length;
+          const expiringSoon = groupUnits.filter((u) => {
+            if (u.status !== 'Available') return false;
+            const exp = new Date(u.expiryDate ?? u.expiry_date);
+            return exp <= sevenDays && exp >= now;
+          }).length;
+          return { group, available, reserved, issued, expired, discarded, expiringSoon };
+        });
+        setStockData(grouped);
+      })
+      .catch((err) => {
+        setError(err.message || 'Failed to load stock data');
+      })
+      .finally(() => setLoading(false));
+  }, []);
 
   const lowStockGroups = stockData.filter((s) => s.available < 5);
   const totalExpiringSoon = stockData.reduce((acc, curr) => acc + curr.expiringSoon, 0);
+
+  if (loading) {
+    return (
+      <div className="panel" style={{ padding: '2rem', textAlign: 'center' }}>
+        Loading staff dashboard…
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -23,23 +59,23 @@ export default function StaffDashboard({ onNavigate }) {
         <p className="dashboard-subtitle">Real-time blood inventory, FEFO allocation queue, and operational alerts.</p>
       </div>
 
-      {/* Visual Alerts per TC-07 and TC-28 */}
+      {error && <div className="alert-banner danger" role="alert">{error}</div>}
+
+      {/* Visual Alerts */}
       <div className="alerts-container">
         {lowStockGroups.map((g) => (
           <div key={g.group} className="alert-banner danger" role="alert">
             <span className="alert-badge-label">CRITICAL</span>
-            {/* Specific TC-07 requirement: text must read "Low Stock Alert: <group>" */}
             <span>
               <strong>Low Stock Alert: {g.group}</strong> ({g.available} units available, below 5-unit safety threshold).
             </span>
           </div>
         ))}
-
         {totalExpiringSoon > 0 && (
           <div className="alert-banner warning" role="alert">
             <span className="alert-badge-label">EXPIRING SOON</span>
             <span>
-              <strong>Shelf Life Alert (TC-28):</strong> {totalExpiringSoon} unit(s) expiring within 7 days. Prioritize these units for issue under FEFO rules.
+              <strong>Shelf Life Alert:</strong> {totalExpiringSoon} unit(s) expiring within 7 days. Prioritize these units under FEFO rules.
             </span>
           </div>
         )}
@@ -69,7 +105,7 @@ export default function StaffDashboard({ onNavigate }) {
         </div>
       </div>
 
-      {/* Quick Action Shortcuts */}
+      {/* Quick Actions */}
       <div className="panel">
         <div className="panel-header">
           <h2 className="panel-title">Quick Operations</h2>
@@ -90,10 +126,11 @@ export default function StaffDashboard({ onNavigate }) {
         </div>
       </div>
 
-      {/* Stock Summary Table - Full lifecycle per TC-28 */}
+      {/* Stock Summary Table */}
       <div className="panel">
         <div className="panel-header">
-          <h2 className="panel-title">Blood Inventory Status (TC-28)</h2>
+          <h2 className="panel-title">Blood Inventory Status</h2>
+          <span style={{ fontSize: '0.8rem', color: 'var(--slate-500)' }}>Live data from backend</span>
         </div>
         <div className="table-wrap">
           <table className="data-table">
@@ -123,9 +160,7 @@ export default function StaffDashboard({ onNavigate }) {
                       <span className="badge" style={{ background: 'var(--warning-bg)', color: '#92400e', fontWeight: '700' }}>
                         {item.expiringSoon} unit(s)
                       </span>
-                    ) : (
-                      '—'
-                    )}
+                    ) : '—'}
                   </td>
                   <td>
                     {item.available < 5 ? (

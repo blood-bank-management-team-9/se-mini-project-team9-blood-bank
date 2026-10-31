@@ -3,8 +3,13 @@ import { useAuth } from '../context/AuthContext';
 import { getNavigationItems, getRoleBadgeClass } from '../utils/navigation';
 
 export default function Navbar({ activeTab, onSelectTab }) {
-  const { user, role, switchRole, logout, login } = useAuth();
+  const { user, role, logout, authLoading } = useAuth();
   const navItems = getNavigationItems(role);
+
+  const handleLogout = async () => {
+    await logout();
+    onSelectTab('login');
+  };
 
   return (
     <header className="app-header">
@@ -12,7 +17,7 @@ export default function Navbar({ activeTab, onSelectTab }) {
         <button
           type="button"
           className="brand"
-          onClick={() => onSelectTab('dashboard')}
+          onClick={() => onSelectTab(user ? 'dashboard' : 'login')}
           aria-label="Blood Bank Management System Home"
         >
           <div className="brand-icon">🩸</div>
@@ -23,52 +28,40 @@ export default function Navbar({ activeTab, onSelectTab }) {
         </button>
 
         <div className="header-controls">
-          {/* Dev-only role preview switcher (clearly labeled) */}
-          <div className="role-switcher-wrap" title="Dev Preview: switch roles to inspect SAD 4.5 role dashboards">
-            <span style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--slate-500)' }}>[DEV PREVIEW]:</span>
-            <select
-              className="role-select"
-              value={role || 'Staff'}
-              onChange={(e) => {
-                switchRole(e.target.value);
-                onSelectTab('dashboard');
-              }}
-              aria-label="Switch active preview role"
-            >
-              <option value="Staff">Staff</option>
-              <option value="Admin">Admin</option>
-              <option value="Donor">Donor</option>
-              <option value="Hospital/Patient">Hospital/Patient</option>
-            </select>
-          </div>
-
-          {/* User Profile Pill & Logout */}
-          {user ? (
+          {authLoading ? (
+            <span style={{ fontSize: '0.85rem', color: 'var(--slate-500)' }}>Loading…</span>
+          ) : user ? (
             <>
               <div className="user-pill">
-                <span>{user.name}</span>
-                <span className={`role-badge ${getRoleBadgeClass(role)}`}>{role}</span>
+                <button
+                  type="button"
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', padding: 0 }}
+                  onClick={() => onSelectTab('profile')}
+                  title="View / edit profile"
+                >
+                  <span style={{ fontWeight: 600 }}>{user.name}</span>
+                  <span className={`role-badge ${getRoleBadgeClass(role)}`}>{role}</span>
+                </button>
               </div>
-              <button
-                type="button"
-                className="btn-logout"
-                onClick={() => {
-                  logout();
-                  onSelectTab('dashboard');
-                }}
-              >
+              <button type="button" className="btn-logout" onClick={handleLogout}>
                 Logout
               </button>
             </>
           ) : (
-            <button type="button" className="btn-primary" onClick={() => login('Staff')}>
-              Sign In
-            </button>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button type="button" className="btn-secondary" onClick={() => onSelectTab('register')}
+                style={{ fontSize: '0.85rem', padding: '0.4rem 0.85rem' }}>
+                Register
+              </button>
+              <button type="button" className="btn-primary" onClick={() => onSelectTab('login')}>
+                Sign In
+              </button>
+            </div>
           )}
         </div>
       </div>
 
-      {/* Nav Menu dynamically filtered by role as mandated by SAD 4.3 & 4.5 */}
+      {/* Role-filtered nav — only shown when logged in */}
       {user && (
         <nav className="role-nav" aria-label="Role Navigation">
           <div className="nav-inner">
@@ -86,6 +79,15 @@ export default function Navbar({ activeTab, onSelectTab }) {
                 </button>
               );
             })}
+            {/* Profile link always available */}
+            <button
+              type="button"
+              className={`nav-item ${activeTab === 'profile' ? 'active' : ''}`}
+              onClick={() => onSelectTab('profile')}
+              aria-current={activeTab === 'profile' ? 'page' : undefined}
+            >
+              My Profile
+            </button>
           </div>
         </nav>
       )}

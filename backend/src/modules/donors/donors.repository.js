@@ -50,7 +50,7 @@ async function findDonorById(donorId, tx = null) {
 
 async function findDonorByUserId(userId, tx = null) {
   const { rows } = await runner(tx)(
-    `SELECT donor_id FROM donors WHERE user_id = $1${tx ? ' FOR UPDATE' : ''}`,
+    `SELECT ${DONOR_COLUMNS} FROM donors WHERE user_id = $1${tx ? ' FOR UPDATE' : ''}`,
     [userId]
   );
   return rows[0] || null;
