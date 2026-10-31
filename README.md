@@ -1,6 +1,5 @@
 # Blood Bank Management System (BBMS): Team 9
 
-![Status](https://img.shields.io/badge/status-work%20in%20progress-orange)
 ![Node](https://img.shields.io/badge/node-%3E%3D20-339933?logo=node.js&logoColor=white)
 ![React](https://img.shields.io/badge/react-18-61DAFB?logo=react&logoColor=black)
 ![PostgreSQL](https://img.shields.io/badge/postgresql-17-4169E1?logo=postgresql&logoColor=white)
@@ -8,10 +7,8 @@
 A web application for managing blood donors, donations, blood stock and blood requests.
 Software Engineering (UE24CS341A) mini-project, Section C, PES University, Bangalore.
 
-> **Status: work in progress.**
-> The middleware layer, registration, login, logout, donor profile management and eligibility, admin user management and audit retention are implemented.
-> Password reset, donation, stock, request and report modules are being built on their own branches.
-> See [Project status](#project-status).
+> **Status: end-to-end prototype complete.**
+> The backend (38 suites, 302 tests) and frontend are fully wired. All four user roles have working workflows. Password reset, donations (including failed screening), stock management, requests (FEFO), and reports are implemented and verified.
 
 ---
 
@@ -39,10 +36,10 @@ BBMS supports four user roles:
 
 | Role | Purpose |
 |---|---|
-| Donor | Register, view eligibility and donation history |
-| Hospital/Patient | Register and request blood |
-| Staff | Record donations, manage stock, handle requests |
-| Admin | Manage accounts and view reports |
+| Donor | Register, view real eligibility status, and view donation history |
+| Hospital/Patient | Register, search stock, and submit/track blood requests |
+| Staff | Register donors, record donations, manage stock, and process requests |
+| Admin | Manage accounts, view audit logs, and access reports |
 
 Requirements are traced to the SRS, SAD and Test Plan (see [Documentation](#documentation)).
 
@@ -54,7 +51,7 @@ Requirements are traced to the SRS, SAD and Test Plan (see [Documentation](#docu
 
 | Area | Requirement | Issue / branch |
 |---|---|---|
-| Request ID on every response | SAD 4.4 | #4 `feature/nfr-sec-mw` |
+| Request ID on every response | SAD 4.4 | #4 |
 | Sessions (15-min idle, HttpOnly, Secure) | NFR-SEC-04 | #4 |
 | RBAC (deny by default, 403 + audit) | NFR-SEC-02 | #4 |
 | Input validation | NFR-SEC-05 | #4 |
@@ -62,35 +59,33 @@ Requirements are traced to the SRS, SAD and Test Plan (see [Documentation](#docu
 | Standard error shape | SAD 4.4 | #4 |
 | Atomic transactions | NFR-QUAL-03 | #4 |
 | Audit trail writer | NFR-SEC-02 | #4 |
-| Registration (`POST /api/auth/register`) | FR-AUTH-01, FR-AUTH-02, SAD 4.3 | #5 `feature/auth-register` |
-| Password policy + bcrypt hashing | NFR-SEC-01 | #5 |
-| Auth data-access layer | SAD C4 | #5 |
-| Login by email + password, with lockout (`POST /api/auth/login`) | FR-AUTH-03, FR-AUTH-04 | #6 `feature/auth-login` |
+| Registration (`POST /api/auth/register`) | FR-AUTH-01, FR-AUTH-02, NFR-SEC-01 | #5 |
+| Login by email + password, with lockout (`POST /api/auth/login`) | FR-AUTH-03, FR-AUTH-04 | #6 |
 | Logout (`POST /api/auth/logout`) | FR-AUTH-07 | #6 |
-| Session expiry tests | NFR-SEC-04 | #6 |
-| Admin user management: create Staff, list/filter, activate/deactivate, change role, last-admin protection | FR-ADM-01 to FR-ADM-06 | #7 `feature/admin-users` |
+| Password reset (one-time, 15-min token) | FR-AUTH-05 | #14 |
+| Own profile (view/update name, phone, address) | FR-AUTH-06 | #14 |
+| Admin user management: create Staff, list/filter, activate/deactivate, change role, last-admin protection | FR-ADM-01 to FR-ADM-06 | #7 |
 | Audit log viewer (admin only) | FR-ADM-05 | #7 |
-| Audit retention job (365 days, daily at 02:00) | NFR-SEC-06 | #8 `feature/audit-retention` |
+| Audit retention job (365 days, daily at 02:00) | NFR-SEC-06 | #8 |
 | Donor profile management | FR-DON-01 to FR-DON-03, FR-DON-07 | #9 |
 | Donor eligibility engine with config-driven ineligibility reasons | FR-DON-04, FR-DON-05, BR-03 | #10 |
+| Donor account linking and own donation history | FR-DON-06, FR-DON-08 | #15 |
+| Blood donation recording (Passed / Failed screening), unit creation, last-donation update | FR-DNR-01 to FR-DNR-05 | #17 |
+| Donation correction within 24 hours with audit trail | FR-DNR-06 | #19 |
 | Stock summary by group/status, expiry date, low-stock and expiring-soon alerts | FR-STK-01, FR-STK-02, FR-STK-04, FR-STK-05 | #12 |
 | Discard unit with mandatory reason, non-negative stock guard | FR-STK-06, FR-STK-07 | #13 |
+| Search blood stock and eligible donors | FR-SRCH-01 to FR-SRCH-06 | #16 |
+| Blood request handling (submit, pending queue, approve with FEFO, reject, issue, cancel) | FR-REQ-01 to FR-REQ-08 | #17 |
+| Reports (stock, donation, request) with CSV/PDF export | FR-RPT-01 to FR-RPT-06 | #18 |
+| Frontend wired to backend (all 4 roles, real API calls, CSRF, session) | SAD 4.5 | #11 |
+| NFR hardening (performance indexes, TLS config, log redaction, health monitoring) | NFR-SEC-03, NFR-SEC-07, NFR-PERF | #24 |
 
-Key files live under `backend/src/middleware/`, `backend/src/database/transaction.js`, `backend/src/modules/audit/`, `backend/src/modules/auth/` and `backend/src/modules/admin/`.
+### Deviations & known limitations
 
-### Not yet implemented
-
-Owned by other stories. Do not assume they exist.
-
-| Module | Requirements |
-|---|---|
-| Password reset | FR-AUTH-05 |
-| Donor donation history and donation workflows | Remaining FR-DON requirements; FR-DNR-01 to FR-DNR-06 |
-| Blood donation recording | FR-DNR-01 to FR-DNR-06 |
-| Midnight auto-expiry job | FR-STK-03 |
-| Blood request handling with FEFO | FR-REQ-01 to FR-REQ-08 |
-| Reports | FR-RPT-01 to FR-RPT-06 |
-| UI beyond the health-check page | n/a |
+- **Password reset email is deferred.** The reset token is returned in the response body in dev mode (SMTP integration is a follow-up).
+- **Donor dashboard eligibility:** the backend computes eligibility and returns it in `/api/donors/me/donations`. The frontend does not duplicate the logic.
+- **Screening status:** kept in the donation form (FR-DNR-04). A "Failed" screening correctly prevents blood unit creation.
+- **Registration form:** asks for User account details (email, phone, password), not donor health metrics (weight, DOB). Health metrics are captured by Staff during donor registration.
 
 ---
 
@@ -100,7 +95,7 @@ Owned by other stories. Do not assume they exist.
 |---|---|
 | Frontend | React 18 + Vite |
 | Backend | Node.js 20+ with Express 4 |
-| Database | PostgreSQL 17 (dev uses port **5433**, not the default 5432) |
+| Database | PostgreSQL 17 (dev uses port **5433**) |
 | Security | express-session, `csrf-csrf@4`, helmet, bcrypt |
 | Background jobs | node-cron (audit retention) |
 | Tests | Jest + Supertest, ESLint |
@@ -118,10 +113,14 @@ se-mini-project-team9-blood-bank/
 |   |   +-- routes.js         route mounting
 |   |   +-- middleware/       requestId, session, rbac, validate, csrf, errorHandler
 |   |   +-- database/         pool, transaction helper, schema, seeds, migrate/seed/reset
-|   |   +-- modules/          audit, auth, admin, health
+|   |   +-- modules/          audit, auth, admin, donors, donations, stock, search, requests, reports, health
 |   +-- README.md             backend setup, verification, deviations
 +-- frontend/                 React (Vite) client
-+-- docs/                     SRS, SAD, Test Plan
+|   +-- src/
+|   |   +-- services/api.js   Centralized fetch with CSRF + credentials
+|   |   +-- context/          AuthContext (real login/logout, 15-min idle timer)
+|   |   +-- pages/            Login, Register, Dashboards, Forms, Requests, Stock, Reports
++-- docs/                     SRS, SAD, Test Plan, RTM, Deviations
 +-- README.md                 this file
 ```
 
@@ -136,7 +135,7 @@ se-mini-project-team9-blood-bank/
 | PostgreSQL | 17 | Verified with `postgresql-x64-17` on port **5433** |
 | Git | any recent version | |
 
-If your PostgreSQL runs on a different port, set it in `backend/.env` (step 4 below).
+If your PostgreSQL runs on a different port, set it in `backend/.env`.
 
 ---
 
@@ -158,8 +157,6 @@ git checkout main
 npm run install:all
 ```
 
-This installs the root, `backend/` and `frontend/` dependencies.
-
 ### 3. Confirm PostgreSQL is running
 
 ```powershell
@@ -168,8 +165,6 @@ Test-NetConnection localhost -Port 5433
 ```
 
 Expected: `Status : Running` and `TcpTestSucceeded : True`.
-If the service is stopped, run `Start-Service postgresql-x64-17`.
-If your PostgreSQL uses the default port 5432, use `5432` in the steps below.
 
 ### 4. Configure `backend/.env`
 
@@ -177,39 +172,27 @@ If your PostgreSQL uses the default port 5432, use `5432` in the steps below.
 Copy-Item backend\.env.example backend\.env
 ```
 
-Edit `backend\.env` with at least:
+Edit `backend\.env`:
 
 ```dotenv
 PORT=5000
 NODE_ENV=development
-
 DATABASE_URL=postgresql://postgres:<your-password>@localhost:5433/blood_bank
 DB_HOST=localhost
 DB_PORT=5433
 DB_NAME=blood_bank
 DB_USER=postgres
 DB_PASSWORD=<your-password>
-
 SESSION_SECRET=<random 48-byte base64>
 CSRF_SECRET=<random 48-byte base64>
 ```
 
-Generate each secret (run twice, one output per secret):
+### 5. Create the database (once)
 
 ```powershell
-[Convert]::ToBase64String((1..48 | ForEach-Object { Get-Random -Maximum 256 }))
-```
-
-**Never commit `backend/.env`** (it is gitignored) and never paste secrets into chat or PRs.
-
-### 5. Create the database (once per machine)
-
-```powershell
-$psql = "D:\Postgres\bin\psql.exe"   # adjust to your install location
+$psql = "D:\Postgres\bin\psql.exe"
 & $psql -h localhost -p 5433 -U postgres -d postgres -c "CREATE DATABASE blood_bank;"
 ```
-
-Skip this if the database already exists.
 
 ### 6. Run migrations and seeds
 
@@ -218,32 +201,25 @@ npm run db:migrate --prefix backend
 npm run db:seed --prefix backend
 ```
 
-The seed creates one user per role:
+The seed creates one user per role (password `Test@1234`):
 
-| User ID | Role |
+| Email | Role |
 |---|---|
-| `USR-DNR01` | Donor |
-| `USR-HSP01` | Hospital/Patient |
-| `USR-STF01` | Staff |
-| `USR-ADM01` | Admin |
-
-Seed password for all seeded users is `Test@1234` (per `seeds.sql`).
-
-Seeding is required for authentication flows, admin endpoints and the test suites that use a live database.
+| `john.doe@example.com` | Donor |
+| `hospital@citygen.org` | Hospital/Patient |
+| `staff@bloodbank.org` | Staff |
+| `admin@bloodbank.org` | Admin |
 
 ### 7. Start the apps
 
 ```powershell
-npm run dev                      # API and UI together
-npm run dev --prefix backend     # API only
+npm run dev
 ```
 
 - API: `http://localhost:5000`
 - UI: `http://localhost:5173`
 
-Expected backend output: `API listening on port 5000`
-
-### 8. Verify the backend
+### 8. Verify
 
 In a second terminal:
 
@@ -251,101 +227,95 @@ In a second terminal:
 curl.exe -s http://localhost:5000/api/health
 ```
 
-Expected: `{"status":"ok","service":"blood-bank-api","timestamp":"..."}`
-
-For the full verification sequence (sessions, RBAC, audit rows, registration), see [`backend/README.md`](backend/README.md).
-
 ---
 
 ## Common commands
 
-From the repository root:
-
 | Command | What it does |
 |---|---|
-| `npm run install:all` | Install root, backend and frontend dependencies |
-| `npm run dev` | Start backend and frontend together |
-| `npm run dev --prefix backend` | Start only the backend |
+| `npm run install:all` | Install dependencies |
+| `npm run dev` | Start backend and frontend |
 | `npm test` | Run backend Jest + Supertest suites |
 | `npm run lint` | Run backend ESLint |
 | `npm run db:migrate --prefix backend` | Apply `schema.sql` |
 | `npm run db:seed --prefix backend` | Load seed data |
-| `npm --prefix frontend run build` | Produce the production frontend build |
+| `npm --prefix frontend run build` | Build the frontend |
 
-> **Warning:** do not run `npm run db:reset --prefix backend` on a database whose data you care about.
-> It drops the project tables and re-runs migrations.
+> **Warning:** `npm run db:reset --prefix backend` drops all project tables. Do not run it on data you care about.
 
 ---
 
 ## API endpoints
 
-Base URL: `http://localhost:5000`. Details and conventions are in [`backend/README.md`](backend/README.md).
+Base URL: `http://localhost:5000`. Full details in [`backend/README.md`](backend/README.md).
 
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
 | `GET` | `/api/health` | none | Health check |
-| `GET` | `/api/auth/csrf` | none | Issues a CSRF token (sets `bbms.csrf` cookie) |
-| `GET` | `/api/auth/me` | session | Returns current session user |
-| `GET` | `/api/auth/staff-only` | Staff | Demonstrates RBAC allow and 403 paths |
-| `POST` | `/api/auth/demo-validate` | none | Demonstrates `VALIDATION_ERROR` shape |
-| `POST` | `/api/auth/__dev-session` | none, **test-only** | Creates a session for a seeded user |
-| `POST` | `/api/auth/__dev-logout` | none, **test-only** | Destroys the current session |
-| `POST` | `/api/auth/register` | none | Register as Donor or Hospital/Patient (FR-AUTH-01, FR-AUTH-02, NFR-SEC-01) |
-| `POST` | `/api/auth/login` | none | Authenticate by email + password. Returns session cookie on success (FR-AUTH-03, FR-AUTH-04) |
-| `POST` | `/api/auth/logout` | session | Ends the current session and clears the cookie (FR-AUTH-07) |
-| `GET` | `/api/stock/summary` | Staff, Admin | Counts per group x status, low-stock and expiring-soon alerts (FR-STK-01, 04, 05) |
-| `GET` | `/api/stock/units?bloodGroup=&status=` | Staff, Admin | Units, earliest expiry first, with `expiringSoon` tag (FR-STK-01, 02, 05) |
-| `PATCH` | `/api/stock/units/:unitId/discard` | Staff, Admin | Discard with mandatory reason (Expired, Hemolyzed, Contaminated, Leakage, Test Positive); audited (FR-STK-06, 07) |
-| `POST` | `/api/donors` | Staff, Admin | Register and validate a donor (FR-DON-01, FR-DON-02) |
-| `GET` | `/api/donors?status=&bloodGroup=&q=` | Staff, Admin | List and filter donor profiles |
-| `GET` | `/api/donors/{id}` | Staff, Admin | Read a donor profile |
-| `GET` | `/api/donors/{id}/eligibility` | Staff, Admin | Evaluate donor eligibility and return ineligibility reasons (FR-DON-04, FR-DON-05, BR-03) |
-| `PUT` | `/api/donors/{id}` | Staff, Admin | Update a donor profile (FR-DON-03) |
-| `PATCH` | `/api/donors/{id}/status` | Staff, Admin | Deactivate or reactivate a donor (FR-DON-07) |
-| `POST` | `/api/admin/users` | Admin | Create a Staff account (FR-ADM-01) |
-| `GET` | `/api/admin/users?role=&status=&q=` | Admin | List and filter users (FR-ADM-02) |
-| `PATCH` | `/api/admin/users/{id}/status` | Admin | Activate/deactivate user; blocks last-admin deactivation (FR-ADM-03, FR-ADM-06) |
-| `PATCH` | `/api/admin/users/{id}/role` | Admin | Assign or change a user's role; blocks last-admin demotion (FR-ADM-04, FR-ADM-06) |
-| `GET` | `/api/admin/audit-logs?limit=` | Admin | Read recent audit rows (FR-ADM-05) |
+| `GET` | `/api/auth/csrf` | none | Issues CSRF token |
+| `POST` | `/api/auth/register` | none | Register as Donor or Hospital/Patient |
+| `POST` | `/api/auth/login` | none | Authenticate and create session |
+| `POST` | `/api/auth/logout` | session | End session |
+| `POST` | `/api/auth/forgot-password` | none | Request reset token (dev returns token) |
+| `POST` | `/api/auth/reset-password` | none | Use reset token to set new password |
+| `GET` | `/api/auth/me` | session | Get own profile |
+| `PUT` | `/api/auth/me` | session | Update own profile |
+| `POST` | `/api/donors` | Staff/Admin | Register a donor |
+| `GET` | `/api/donors` | Staff/Admin | List/filter donors |
+| `GET` | `/api/donors/{id}/eligibility` | Staff/Admin | Check eligibility with reasons |
+| `GET` | `/api/donors/me/donations` | Donor | Own donation history + eligibility |
+| `POST` | `/api/donations` | Staff/Admin | Record a donation (Passed/Failed) |
+| `PUT` | `/api/donations/{id}` | Staff/Admin | Correct a donation (24h window) |
+| `GET` | `/api/stock/summary` | Staff/Admin | Grouped stock with alerts |
+| `GET` | `/api/stock/units` | Staff/Admin | Individual units with expiry |
+| `PATCH` | `/api/stock/units/{id}/discard` | Staff/Admin | Discard with reason |
+| `GET` | `/api/search/stock` | Hospital/Patient, Staff | Search stock by group |
+| `GET` | `/api/search/donors` | Staff/Admin | Search eligible donors |
+| `POST` | `/api/requests` | Hospital/Patient | Submit blood request |
+| `GET` | `/api/requests/mine` | Hospital/Patient | View own requests |
+| `PATCH` | `/api/requests/{id}/cancel` | Hospital/Patient | Cancel a Pending request |
+| `GET` | `/api/requests/pending` | Staff/Admin | Pending queue (Urgent first) |
+| `PATCH` | `/api/requests/{id}/approve` | Staff/Admin | Approve and reserve (FEFO) |
+| `PATCH` | `/api/requests/{id}/reject` | Staff/Admin | Reject with reason |
+| `PATCH` | `/api/requests/{id}/issue` | Staff/Admin | Issue reserved units |
+| `GET` | `/api/reports/stock` | Staff/Admin | Stock report |
+| `GET` | `/api/reports/donation` | Staff/Admin | Donation report |
+| `GET` | `/api/reports/request` | Staff/Admin | Request report |
+| `GET` | `/api/reports/{type}/export` | Staff/Admin | CSV/PDF export |
+| `POST` | `/api/admin/users` | Admin | Create a Staff account |
+| `GET` | `/api/admin/users` | Admin | List/filter users |
+| `PATCH` | `/api/admin/users/{id}/status` | Admin | Activate/deactivate |
+| `PATCH` | `/api/admin/users/{id}/role` | Admin | Assign role |
+| `GET` | `/api/admin/audit-logs` | Admin | View audit log |
 
-- The `__dev-*` routes exist only when `NODE_ENV !== 'production'`. They are test helpers and should be removed once nothing depends on them.
-- All errors use one shape: `{ "error": { "code", "message", "requestId" } }` (SAD 4.4).
-- State-changing requests need an `x-csrf-token` header obtained from `GET /api/auth/csrf`.
+All errors use one shape: `{ "error": { "code", "message", "requestId" } }` (SAD 4.4). State-changing requests need an `x-csrf-token` header from `GET /api/auth/csrf`.
 
 ---
 
 ## Testing
 
 ```powershell
-npm run lint                         # ESLint (backend)
-npm test                             # Jest + Supertest (backend)
-npm --prefix frontend run build      # frontend build check
+npm run lint
+npm test
+npm --prefix frontend run build
 ```
 
-Run `npm test` and record the current suite and test totals in your PR description. Do not copy old numbers into this file.
+Current state on `main`:
+- **Backend:** 38 suites, 302 tests passing.
+- **Frontend:** builds successfully.
 
-Suites that need a live PostgreSQL use `describeIfDatabase` and **skip automatically** when `DATABASE_URL` is not set, so CI without a database does not fail:
-
-- `backend/src/database/transaction.test.js` (NFR-QUAL-03)
-- `backend/src/modules/auth/auth.register.test.js` (FR-AUTH-01, FR-AUTH-02)
-- `backend/src/modules/auth/auth.login.test.js` (FR-AUTH-03, FR-AUTH-04, FR-AUTH-07)
-- `backend/src/modules/admin/admin.test.js` (FR-ADM-01 to FR-ADM-06)
-- `backend/src/modules/audit/audit.retention.test.js` (NFR-SEC-06)
+Suites requiring a live PostgreSQL use `describeIfDb` and skip automatically when `DATABASE_URL` is unset (so CI without a database passes).
 
 ---
 
 ## Development workflow
 
-1. Branch from `main` (or from the active feature branch if your work depends on unmerged middleware).
-2. Implement against the SRS, SAD and STP. Note any deviations in the PR description.
+1. Branch from `main`.
+2. Implement against the SRS, SAD and STP. Note deviations in the PR.
 3. Run `npm run lint` and `npm test` before pushing.
-4. Open a PR against `main` with:
-   - `Closes #N`
-   - the requirements, SAD reference and STP test cases it covers
-   - explicit deviations the reviewer must acknowledge
+4. Open a PR against `main` with `Closes #N` and the STP test cases covered.
 5. Merge after CI is green and a reviewer approves.
 
-Keep PRs focused. A documentation rewrite goes in its own `docs/` branch, not inside a feature PR.
 Never commit `backend/.env`, `cookies.txt` or `body.json`.
 
 ---
@@ -354,15 +324,12 @@ Never commit `backend/.env`, `cookies.txt` or `body.json`.
 
 | Symptom | Cause and fix |
 |---|---|
-| `EADDRINUSE: address already in use :::5000` | A previous `nodemon` is still running. Run `Get-NetTCPConnection -LocalPort 5000 -State Listen \| Select-Object -ExpandProperty OwningProcess`, then `Stop-Process -Id <pid> -Force`. |
-| `connect ECONNREFUSED ::1:5432` | Wrong port. The dev DB is on **5433**. Check `DATABASE_URL` and `DB_PORT` in `backend/.env`. |
-| `connect ECONNREFUSED` on `npm test` | `backend/.env` is missing or `DATABASE_URL` is unset. See step 4. |
-| `EBADCSRFTOKEN` from `curl` | Call `GET /api/auth/csrf` first, keep the cookie jar, and send `x-csrf-token` on the POST. CSRF is bypassed only under `NODE_ENV=test`. |
-| `400 NO_ACTIVE_USER` from `__dev-session` | Seeds not loaded. Run `npm run db:seed --prefix backend`. |
-| Login keeps failing for a known account | The account may be locked after repeated failed attempts. See `backend/README.md`. |
-| `LAST_ADMIN` on admin deactivation | You tried to deactivate or demote the last active admin. Protected by FR-ADM-06. |
-| `audit_log violates foreign key constraint` | The session user's ID does not exist in `users`. Use a seeded user. |
-| `password authentication failed` | `DB_PASSWORD` or `DATABASE_URL` in `backend/.env` is wrong. |
+| `EADDRINUSE: address already in use :::5000` | Previous `nodemon` running. `Get-NetTCPConnection -LocalPort 5000 -State Listen` then `Stop-Process`. |
+| `connect ECONNREFUSED ::1:5432` | Wrong port. Dev DB is on **5433**. Check `backend/.env`. |
+| `EBADCSRFTOKEN` from `curl` | Call `GET /api/auth/csrf` first; send `x-csrf-token` on mutating requests. |
+| Login fails for known account | Account may be locked after 5 failed attempts. See `backend/README.md`. |
+| `LAST_ADMIN` on admin action | You tried to deactivate the last active admin. |
+| Frontend shows blank or errors | Restart Vite: `Ctrl+C` then `npm run dev --prefix frontend`. |
 
 ---
 
@@ -370,13 +337,12 @@ Never commit `backend/.env`, `cookies.txt` or `body.json`.
 
 | Document | Location |
 |---|---|
-| Requirements Traceability Matrix (RTM) | [`docs/RTM.md`](docs/RTM.md) |
+| Requirements Traceability Matrix | [`docs/RTM.md`](docs/RTM.md) |
 | Architecture Deviations Register | [`docs/DEVIATIONS.md`](docs/DEVIATIONS.md) |
-| Production Nginx TLS Config | [`docs/nginx/bbms.conf`](docs/nginx/bbms.conf) |
 | SRS v1.1 | [`docs/SRS_bbms.pdf`](docs/SRS_bbms.pdf) |
 | SAD v1.0 | [`docs/sad_bbms_09.pdf`](docs/sad_bbms_09.pdf) |
 | STP v1.0 | [`docs/BBMS_Software_Test_Plan_v1.0.pdf`](docs/BBMS_Software_Test_Plan_v1.0.pdf) |
-| Backend setup, verification and deviations | [`backend/README.md`](backend/README.md) |
+| Backend setup & deviations | [`backend/README.md`](backend/README.md) |
 
 ---
 
