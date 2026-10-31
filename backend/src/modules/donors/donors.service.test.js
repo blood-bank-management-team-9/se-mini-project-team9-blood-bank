@@ -1,3 +1,6 @@
+// C6 Donor Management — unit tests for donors.service.js
+// Mocks the repository layer so no database is required.
+
 jest.mock('../../database/transaction', () => ({
   withTransaction: jest.fn((callback) => callback({ query: jest.fn() })),
 }));
@@ -184,7 +187,15 @@ describe('Donor service', () => {
   });
 
   it('returns only donation history belonging to the authenticated linked donor', async () => {
-    repo.findDonorByUserId.mockResolvedValue({ donor_id: 'DNR-00006' });
+    // Updated to return the full donor row, because the service now evaluates eligibility
+    repo.findDonorByUserId.mockResolvedValue(donorRow());
+    repo.getEligibilityConfig.mockResolvedValue({
+      eligibility_min_age: '18',
+      eligibility_max_age: '65',
+      eligibility_min_weight_kg: '45',
+      eligibility_gap_days_male: '90',
+      eligibility_gap_days_other: '120',
+    });
     repo.listDonationHistory.mockResolvedValue([{
       donation_id: 'DON-00000001',
       collection_date: '2026-10-01',
@@ -194,8 +205,13 @@ describe('Donor service', () => {
       donation_status: 'Recorded',
     }]);
 
-    await expect(donorService.getOwnDonationHistory('USR-DNR01', 'Donor')).resolves.toEqual({
+    const result = await donorService.getOwnDonationHistory('USR-DNR01', 'Donor');
+
+    expect(result).toEqual({
       donorId: 'DNR-00006',
+      bloodGroup: 'O+',
+      gender: 'Female',
+      eligibility: expect.objectContaining({ eligible: true }),
       donations: [{
         donationId: 'DON-00000001',
         collectionDate: '2026-10-01',
