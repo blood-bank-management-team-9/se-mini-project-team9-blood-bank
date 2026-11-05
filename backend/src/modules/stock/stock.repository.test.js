@@ -133,3 +133,95 @@ describe('stock.repository', () => {
     });
   });
 });
+
+describe('stock.repository additional functions', () => {
+  let tx;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    tx = {
+      query: jest.fn(),
+    };
+  });
+
+  describe('findUnitForUpdate', () => {
+    test('returns the unit when found', async () => {
+      const unit = {
+        unit_id: 'UNIT-001',
+        blood_group: 'A+',
+        status: 'Available',
+      };
+
+      tx.query.mockResolvedValue({ rows: [unit] });
+
+      const result = await repo.findUnitForUpdate(tx, 'UNIT-001');
+
+      expect(result).toEqual(unit);
+      expect(tx.query).toHaveBeenCalledWith(
+        expect.stringContaining('FOR UPDATE'),
+        ['UNIT-001']
+      );
+    });
+
+    test('returns null when the unit does not exist', async () => {
+      tx.query.mockResolvedValue({ rows: [] });
+
+      const result = await repo.findUnitForUpdate(tx, 'UNIT-999');
+
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('markDiscarded', () => {
+    test('returns the updated unit when a unit is discarded', async () => {
+      const unit = {
+        unit_id: 'UNIT-001',
+        blood_group: 'A+',
+        status: 'Discarded',
+        discard_reason: 'Damaged',
+      };
+
+      tx.query.mockResolvedValue({ rows: [unit] });
+
+      const result = await repo.markDiscarded(
+        tx,
+        'UNIT-001',
+        'Damaged',
+        ['Available', 'Expired']
+      );
+
+      expect(result).toEqual(unit);
+      expect(tx.query).toHaveBeenCalledWith(
+        expect.stringContaining("SET status = 'Discarded'"),
+        ['UNIT-001', 'Damaged', ['Available', 'Expired']]
+      );
+    });
+
+    test('returns null when no unit is updated', async () => {
+      tx.query.mockResolvedValue({ rows: [] });
+
+      const result = await repo.markDiscarded(
+        tx,
+        'UNIT-999',
+        'Damaged',
+        ['Available']
+      );
+
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('countAvailable', () => {
+    test('returns the available unit count', async () => {
+      tx.query.mockResolvedValue({ rows: [{ count: 12 }] });
+
+      const result = await repo.countAvailable(tx, 'O+');
+
+      expect(result).toBe(12);
+      expect(tx.query).toHaveBeenCalledWith(
+        expect.stringContaining("status = 'Available'"),
+        ['O+']
+      );
+    });
+  });
+});
