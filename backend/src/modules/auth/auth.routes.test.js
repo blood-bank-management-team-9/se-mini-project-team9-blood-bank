@@ -1,4 +1,4 @@
-
+﻿
 jest.mock('../../database/db', () => ({
   query: jest.fn(),
 }));
@@ -27,6 +27,7 @@ jest.mock('./auth.service', () => {
     register: jest.fn(),
     login: jest.fn(),
     logout: jest.fn(),
+    getProfile: jest.fn(),
   };
 });
 
@@ -147,12 +148,23 @@ describe('auth.routes', () => {
     });
 
     test('returns the logged-in user', async () => {
+      authService.getProfile.mockResolvedValue({
+        userId: 'U001',
+        name: 'Test User',
+        email: 'test@example.com',
+        phone: '9876543210',
+        address: null,
+        role: 'Donor',
+        status: 'Active',
+      });
+
       const response = await request(app)
         .get('/api/auth/me')
         .set('x-auth-user', '1');
 
       expect(response.status).toBe(200);
-      expect(response.body.user.userId).toBe('U001');
+      expect(response.body.userId).toBe('U001');
+      expect(authService.getProfile).toHaveBeenCalledWith('U001', 'Donor');
     });
   });
 
