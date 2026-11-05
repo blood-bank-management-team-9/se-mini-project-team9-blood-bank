@@ -170,3 +170,139 @@ describe('Donor service', () => {
     expect(logAudit).not.toHaveBeenCalled();
   });
 });
+
+describe('Donor service additional branch coverage', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('lists donors and maps database rows to DTOs', async () => {
+    repo.listDonors.mockResolvedValue([donorRow()]);
+    const result = await donorService.listDonors({ status: 'Active' });
+    expect(result.total).toBe(1);
+    expect(result.donors[0]).toMatchObject({
+      donorId: 'DNR-00006',
+      fullName: 'Test Donor',
+      weightKg: 58,
+    });
+  });
+
+  it('returns a donor by ID', async () => {
+    repo.findDonorById.mockResolvedValue(donorRow());
+    const result = await donorService.getDonor('DNR-00006');
+    expect(result.donorId).toBe('DNR-00006');
+  });
+
+  it('updates a donor and records an audit event', async () => {
+    repo.findDonorById.mockResolvedValue(donorRow());
+    repo.updateDonor.mockResolvedValue(donorRow({ full_name: 'Updated Donor' }));
+
+    const result = await donorService.updateDonor({
+      actorUserId: 'USR-STF01',
+      donorId: 'DNR-00006',
+      donor: { fullName: 'Updated Donor' },
+    });
+
+    expect(result.fullName).toBe('Updated Donor');
+    expect(logAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'DONOR_UPDATED' }),
+      expect.any(Object)
+    );
+  });
+
+  it('passes through non-duplicate database errors during creation', async () => {
+    const error = new Error('Database unavailable');
+    repo.nextDonorId.mockResolvedValue('DNR-00006');
+    repo.createDonor.mockRejectedValue(error);
+
+    await expect(donorService.createDonor({
+      actorUserId: 'USR-STF01',
+      donor: {},
+    })).rejects.toBe(error);
+  });
+
+  it('passes through non-duplicate database errors during update', async () => {
+    const error = new Error('Database unavailable');
+    repo.findDonorById.mockResolvedValue(donorRow());
+    repo.updateDonor.mockRejectedValue(error);
+
+    await expect(donorService.updateDonor({
+      actorUserId: 'USR-STF01',
+      donorId: 'DNR-00006',
+      donor: {},
+    })).rejects.toBe(error);
+  });
+
+  it('rejects an invalid donor status', async () => {
+    await expect(donorService.setDonorStatus({
+      actorUserId: 'USR-STF01',
+      donorId: 'DNR-00006',
+      status: 'Unknown',
+    })).rejects.toMatchObject({
+      code: 'VALIDATION_ERROR',
+      status: 400,
+    });
+  });
+
+  it('returns NOT_FOUND when changing the status of an unknown donor', async () => {
+    repo.findDonorById.mockResolvedValue(null);
+
+    await expect(donorService.setDonorStatus({
+      actorUserId: 'USR-STF01',
+      donorId: 'DNR-99999',
+      status: 'Inactive',
+    })).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+      status: 404,
+    });
+  });
+});
+
+it('handles a null row while mapping donor list results', async () => {
+  repo.listDonors.mockResolvedValue([null]);
+
+  const result = await donorService.listDonors({});
+
+  expect(result).toEqual({
+    donors: [null],
+    total: 1,
+  });
+});
+
+it('passes through duplicate-key errors from other constraints', async () => {
+  const error = {
+    code: '23505',
+    constraint: 'some_other_constraint',
+  };
+
+  repo.nextDonorId.mockResolvedValue('DNR-00006');
+  repo.createDonor.mockRejectedValue(error);
+
+  await expect(donorService.createDonor({
+    actorUserId: 'USR-STF01',
+    donor: {},
+  })).rejects.toBe(error);
+});
+
+it('returns a donor DTO when the donor exists', async () => {
+  const row = donorRow();
+  repo.findDonorById.mockResolvedValue(row);
+
+  const result = await donorService.getDonor('DNR-00006');
+
+  expect(result).toMatchObject({
+    donorId: 'DNR-00006',
+    fullName: 'Test Donor',
+    weightKg: 58,
+  });
+  expect(repo.findDonorById).toHaveBeenCalledWith('DNR-00006');
+});
+
+it('throws NOT_FOUND when getDonor receives no database row', async () => {
+  repo.findDonorById.mockResolvedValue(null);
+
+  await expect(
+    donorService.getDonor('DNR-99999')
+  ).rejects.toMatchObject({
+    code: 'NOT_FOUND',
+    status: 404,
+  });
+});
