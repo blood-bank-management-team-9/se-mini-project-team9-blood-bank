@@ -5,3 +5,6 @@ dist/
 coverage/
 demo/drafts/
 "@ | Set-Content .gitignore
+# Generated test/coverage artifacts (source — see docs/reports/ for committed copies)
+backend/coverage/
+backend/test-report.html

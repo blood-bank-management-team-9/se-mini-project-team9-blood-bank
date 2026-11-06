@@ -11,7 +11,8 @@
     "db:seed": "node src/database/seed.js",
     "db:reset": "node src/database/reset.js",
     "test": "jest --runInBand",
-    "test:coverage": "jest --runInBand --coverage"
+    "test:coverage": "jest --runInBand --coverage",
+    "test:reports": "jest --runInBand --coverage --reporters=default --reporters=jest-html-reporter --coverageReporters=text --coverageReporters=html --coverageReporters=json-summary --coverageReporters=lcov"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
@@ -31,6 +32,7 @@
   "devDependencies": {
     "eslint": "^8.57.0",
     "jest": "^29.7.0",
+    "jest-html-reporter": "^4.4.3",
     "nodemon": "^3.1.0",
     "supertest": "^7.0.0"
   }
