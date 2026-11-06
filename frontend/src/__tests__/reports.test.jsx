@@ -3,7 +3,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import ReportsModule from '../components/reports/ReportsModule.jsx';
 import { AuthContext } from '../context/AuthContext.jsx';
+import { cleanup } from '@testing-library/react';
+import { afterEach } from 'vitest';
 
+afterEach(() => cleanup());
 function renderWithAuth(ui, role = 'Staff') {
   const mockUser = {
     id: `USR-${role.toUpperCase().slice(0, 3)}`,
